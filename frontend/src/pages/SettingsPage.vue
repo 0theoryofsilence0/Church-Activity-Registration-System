@@ -114,7 +114,7 @@ async function uploadLogo() {
     if (res?.ok) {
       // update branding service
       branding.logo.value = res.file || null;
-      toastSuccess('Logo uploaded', 'Success');
+      // toastSuccess('Logo uploaded', 'Success');
       // clear preview
     previewData.value = null;
     selectedFileName.value = null;

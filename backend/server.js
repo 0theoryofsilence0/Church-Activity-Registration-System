@@ -70,18 +70,33 @@ const USERS = [
     role: "super",
   },
   {
+    username: process.env.ADMIN_USER2 || "admin2",
+    password: process.env.ADMIN_PASS2 || "admin123",
+    role: "super",
+  },
+  {
     username: process.env.STAFF_USER || "staff",
     password: process.env.STAFF_PASS || "staff123",
     role: "user",
   },
   {
-    username: process.env.STAFF_USER || "staff2",
-    password: process.env.STAFF_PASS || "staff123",
+    username: process.env.STAFF_USER2 || "staff2",
+    password: process.env.STAFF_PASS2 || "staff123",
     role: "user",
   },
   {
-    username: process.env.STAFF_USER || "staff3",
-    password: process.env.STAFF_PASS || "staff123",
+    username: process.env.STAFF_USER3 || "staff3",
+    password: process.env.STAFF_PASS3 || "staff123",
+    role: "user",
+  },
+  {
+    username: process.env.STAFF_USER4 || "staff4",
+    password: process.env.STAFF_PASS4 || "staff123",
+    role: "user",
+  },
+  {
+    username: process.env.STAFF_USER5 || "staff5",
+    password: process.env.STAFF_PASS5 || "staff123",
     role: "user",
   },
 ];
@@ -222,6 +237,8 @@ CREATE TABLE IF NOT EXISTS campers (
   congregation TEXT,
   gender        TEXT,
   is_leader     INTEGER DEFAULT 0,
+  is_baptized   INTEGER DEFAULT 0,
+  is_guardian   INTEGER DEFAULT 0,
   paid          INTEGER DEFAULT 0,
   sports        VARCHAR(250),
   additional_info VARCHAR(250),
@@ -281,7 +298,7 @@ function setSetting(key, value) {
 
 // Defaults & accessors
 const DEFAULT_ACTIVITY_NAME =
-  process.env.ACTIVITY_NAME || "Church Connect - Activity Registration System";
+  process.env.ACTIVITY_NAME || "Church Activity Registration System";
 const DEFAULT_ACTIVITY_TYPE = process.env.ACTIVITY_TYPE || "Camp"; // "Camp" | "Fellowship"
 const DEFAULT_REGISTRATION_FEE = process.env.REGISTRATION_FEE || "500";
 
@@ -474,6 +491,8 @@ app.post("/api/campers", auth(true), (req, res) => {
       congregation,
       gender,
       is_leader,
+      is_baptized,
+      is_guardian,
       additional_info,
       sports,
     } = req.body;
@@ -481,11 +500,11 @@ app.post("/api/campers", auth(true), (req, res) => {
     const insertStmt = db.prepare(`
       INSERT INTO campers (
         first_name,last_name,nickname,age,congregation,gender,
-        is_leader,paid,additional_info,sports,created_at,paid_at
+        is_leader,is_baptized,is_guardian,paid,additional_info,sports,created_at,paid_at
       )
       VALUES (
         @first_name,@last_name,@nickname,@age,@congregation,@gender,
-        @is_leader,1,@additional_info,@sports,@created_at,@paid_at
+        @is_leader,@is_baptized,@is_guardian,1,@additional_info,@sports,@created_at,@paid_at
       )
     `);
 
@@ -497,6 +516,8 @@ app.post("/api/campers", auth(true), (req, res) => {
       congregation: (congregation || "").trim(),
       gender: (gender || "").trim(),
       is_leader: is_leader ? 1 : 0,
+      is_baptized: is_baptized ? 1 : 0,
+      is_guardian: is_guardian ? 1 : 0,
       additional_info: (additional_info || "").trim(),
       sports: (sports || "").trim(),
       created_at: now(),
@@ -573,6 +594,8 @@ app.put("/api/campers/:id", auth(true), (req, res) => {
       congregation,
       gender,
       is_leader,
+      is_baptized,
+      is_guardian,
       additional_info,
       sports,
     } = req.body;
@@ -586,6 +609,8 @@ app.put("/api/campers/:id", auth(true), (req, res) => {
         congregation = @congregation,
         gender = @gender,
         is_leader = @is_leader,
+        is_baptized = @is_baptized,
+        is_guardian = @is_guardian,
         additional_info = @additional_info,
         sports = @sports
       WHERE id = @id
@@ -600,6 +625,8 @@ app.put("/api/campers/:id", auth(true), (req, res) => {
       congregation: (congregation || "").trim(),
       gender: (gender || "").trim(),
       is_leader: is_leader ? 1 : 0,
+      is_baptized: is_baptized ? 1 : 0,
+      is_guardian: is_guardian ? 1 : 0,
       additional_info: (additional_info || "").trim(),
       sports: (sports || "").trim(),
     });
@@ -635,7 +662,7 @@ app.put("/api/campers/:id", auth(true), (req, res) => {
 // List with filters — requires login (any role)
 app.get("/api/campers", auth(true), (req, res) => {
   try {
-    const { congregation, gender, age, is_leader } = req.query;
+    const { congregation, gender, age, is_leader, is_baptized, is_guardian } = req.query;
 
     let sql = `SELECT * FROM campers WHERE 1=1`;
     const params = {};
@@ -654,6 +681,14 @@ app.get("/api/campers", auth(true), (req, res) => {
     if (is_leader && is_leader !== "All") {
       sql += ` AND is_leader=@is_leader`;
       params.is_leader = Number(is_leader);
+    }
+    if (is_baptized && is_baptized !== "All") {
+      sql += ` AND is_baptized=@is_baptized`;
+      params.is_baptized = Number(is_baptized);
+    }
+    if (is_guardian && is_guardian !== "All") {
+      sql += ` AND is_guardian=@is_guardian`;
+      params.is_guardian = Number(is_guardian);
     }
     sql += ` ORDER BY created_at DESC`;
 
@@ -812,6 +847,14 @@ app.post("/api/print-camper-list", auth(true), async (req, res) => {
       sql += ` AND is_leader=@is_leader`;
       params.is_leader = Number(is_leader);
     }
+    if (typeof is_baptized !== "undefined" && is_baptized !== "All") {
+      sql += ` AND is_baptized=@is_baptized`;
+      params.is_baptized = Number(is_baptized);
+    }
+    if (typeof is_guardian !== "undefined" && is_guardian !== "All") {
+      sql += ` AND is_guardian=@is_guardian`;
+      params.is_guardian = Number(is_guardian);
+    }
     sql += ` ORDER BY congregation ASC, last_name ASC, first_name ASC`;
 
     const rows = db.prepare(sql).all(params);
@@ -960,6 +1003,35 @@ app.delete("/api/campers/:id", auth(true), requireSuper, (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, message: "Failed to delete" });
+  }
+});
+
+// Reset/truncate database — SUPER ONLY, DANGEROUS
+app.post("/api/admin/reset-database", auth(true), requireSuper, (req, res) => {
+  try {
+    // Count records before deletion for confirmation
+    const countStmt = db.prepare("SELECT COUNT(*) as count FROM campers");
+    const { count } = countStmt.get();
+    
+    // Delete all camper records
+    const deleteInfo = db.prepare("DELETE FROM campers").run();
+    
+    // Reset the auto-increment counter
+    db.prepare("DELETE FROM sqlite_sequence WHERE name = 'campers'").run();
+    
+    console.log(`Database reset: ${deleteInfo.changes} campers deleted`);
+    
+    // Broadcast event to notify connected clients
+    broadcastEvent('database:reset', { deletedCount: deleteInfo.changes });
+    
+    res.json({ 
+      ok: true, 
+      deletedCount: deleteInfo.changes,
+      message: `Database reset complete. ${deleteInfo.changes} records deleted.`
+    });
+  } catch (e) {
+    console.error("Failed to reset database:", e);
+    res.status(500).json({ ok: false, error: "Failed to reset database" });
   }
 });
 

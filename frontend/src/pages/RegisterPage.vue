@@ -1,9 +1,15 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import Modal from "../components/Modal.vue";
 import { useRouter } from "vue-router";
 import { branding } from "../services/branding";
-import { withLoading, success as toastSuccess, error as toastError, info as toastInfo } from "../services/ui";
+import {
+  withLoading,
+  success as toastSuccess,
+  error as toastError,
+  info as toastInfo,
+} from "../services/ui";
+import carsLogo from "../assets/cars-logo.png";
 
 const router = useRouter();
 
@@ -32,6 +38,8 @@ const form = ref({
   congregation: "",
   gender: "",
   is_leader: false,
+  is_baptized: false,
+  is_guardian: false,
   additional_info: "",
   sports: "",
 });
@@ -72,6 +80,7 @@ async function openReceiptPreviewFromSuccess() {
     paid: true,
     amount: feeFixed2.value, // dynamic amount
     invoice_no: success.value.invoice_no || "",
+    created_at: new Date().toISOString(), // Current timestamp for new registration
   };
   receipt.value.open = true;
   receipt.value.busy = false;
@@ -98,7 +107,7 @@ async function printFromPreview() {
       } else {
         toastError(j?.error || "Failed to print receipt", "Error");
       }
-    }, "Sending receipt to printer…")
+    }, "Sending receipt to printer…");
   } catch {
     toastError("Failed to print receipt", "Error");
   } finally {
@@ -144,7 +153,10 @@ async function submitForm() {
 
       if (r.status === 409) {
         const j = await r.json().catch(() => ({}));
-        toastInfo(j.message || "Duplicate attendee. Already exists.", "Duplicate");
+        toastInfo(
+          j.message || "Duplicate attendee. Already exists.",
+          "Duplicate"
+        );
         return;
       }
       if (!r.ok) {
@@ -162,7 +174,7 @@ async function submitForm() {
         snapshot,
       };
       toastSuccess(`Registered: ${success.value.name}`, "Success");
-    }, "Registering attendee…")
+    }, "Registering attendee…");
 
     // Reset form only on success
     form.value = {
@@ -173,10 +185,12 @@ async function submitForm() {
       congregation: "",
       gender: "",
       is_leader: false,
+      is_baptized: false,
+      is_guardian: false,
       additional_info: "",
       sports: "",
     };
-    } catch (e) {
+  } catch (e) {
     toastError("Failed to register. " + (e?.message || ""), "Error");
   } finally {
     submitting.value = false;
@@ -199,7 +213,9 @@ const congregationQuery = ref("");
 const showCongregationSuggestions = ref(false);
 
 const filteredCongregations = computed(() => {
-  const q = (congregationQuery.value || form.value.congregation || "").toLowerCase().trim();
+  const q = (congregationQuery.value || form.value.congregation || "")
+    .toLowerCase()
+    .trim();
   if (!q) return congregationsList.value;
   return congregationsList.value.filter((c) => c.toLowerCase().includes(q));
 });
@@ -227,14 +243,20 @@ function selectCongregation(c) {
 
 // Handlers extracted from template to avoid using setTimeout or complex expressions in the template
 function onCongInput(e) {
-  const val = e && e.target ? String(e.target.value || "") : String(form.value.congregation || "");
+  const val =
+    e && e.target
+      ? String(e.target.value || "")
+      : String(form.value.congregation || "");
   // keep form in sync (v-model also does this, but setting explicitly is safe)
   form.value.congregation = val;
   congregationQuery.value = val;
   showCongregationSuggestions.value = true;
 }
 function onCongFocus(e) {
-  const val = e && e.target ? String(e.target.value || "") : String(form.value.congregation || "");
+  const val =
+    e && e.target
+      ? String(e.target.value || "")
+      : String(form.value.congregation || "");
   congregationQuery.value = val;
   showCongregationSuggestions.value = true;
 }
@@ -242,6 +264,18 @@ function onCongBlur() {
   // small delay to allow click events on suggestions (mousedown) to register
   window.setTimeout(() => (showCongregationSuggestions.value = false), 150);
 }
+
+const headerLogoSrc = ref(carsLogo);
+function setHeaderLogoFromBranding() {
+  const v = branding.logo && branding.logo.value ? branding.logo.value : null;
+  if (v) headerLogoSrc.value = `/uploads/${v}`;
+  else headerLogoSrc.value = carsLogo;
+}
+function onHeaderLogoError() {
+  headerLogoSrc.value = carsLogo;
+}
+setHeaderLogoFromBranding();
+watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
 </script>
 
 <template>
@@ -258,6 +292,44 @@ function onCongBlur() {
           </p>
         </div>
       </header>
+
+      <!-- Data Privacy Notice -->
+      <div class="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-5">
+        <div class="flex items-center lg:items-start gap-3 flex-col lg:flex-row">
+          <div class="flex-shrink-0">
+            <svg
+              class="h-5 w-5 text-blue-600"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-blue-900">
+              Data Privacy Notice
+            </h3>
+            <div class="mt-2 text-sm text-blue-800">
+              <p>
+                By registering, you consent to the collection and processing of
+                your personal information for the purpose of organizing this
+                church activity. Your data will be used solely for registration
+                management, communication regarding the event, and safety
+                purposes during the activity.
+              </p>
+              <p class="mt-2">
+                We are committed to protecting your privacy and will not share
+                your information with third parties without your consent, except
+                as required by law or for emergency situations.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Card -->
       <div class="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200">
@@ -341,7 +413,9 @@ function onCongBlur() {
                 />
 
                 <ul
-                  v-if="showCongregationSuggestions && filteredCongregations.length"
+                  v-if="
+                    showCongregationSuggestions && filteredCongregations.length
+                  "
                   class="absolute left-0 right-0 mt-1 max-h-40 overflow-auto rounded-md border bg-white shadow z-50"
                 >
                   <li
@@ -373,19 +447,60 @@ function onCongBlur() {
                 />
               </label>
 
-              <label
-                class="flex items-center gap-3 sm:col-span-2 rounded-lg border border-gray-200 p-3"
-              >
-                <input
-                  type="checkbox"
-                  v-model="form.is_leader"
-                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <div>
-                  <p class="text-sm font-medium text-gray-900">Church Leader</p>
-                  <p :class="hintCls">Tick if this attendee is a leader.</p>
-                </div>
-              </label>
+              <div class="flex gap-4 flex-col col-span-1 sm:col-span-2 w-full mt-5 lg:flex-row">
+                <label
+                  class="w-full h-full flex items-center gap-3 sm:col-span-2 rounded-lg border border-gray-200 p-3"
+                >
+                  <input
+                    type="checkbox"
+                    v-model="form.is_leader"
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div class="flex gap-1 sm:gap-3 align-center items-start flex-col sm:flex-row sm:items-center">
+                    <p class="text-sm font-medium text-gray-900">
+                      Church Leader
+                    </p>
+                    <p :class="hintCls">
+                      ( Tick if this attendee is a leader. )
+                    </p>
+                  </div>
+                </label>
+
+                <!-- Camp-only fields -->
+                <label
+                  v-if="isCamp"
+                  class="w-full h-full flex gap-3 items-center sm:col-span-2 rounded-lg border border-gray-200 p-3"
+                >
+                  <input
+                    type="checkbox"
+                    v-model="form.is_baptized"
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div class="flex gap-1 sm:gap-3 align-center items-start flex-col sm:flex-row sm:items-start">
+                    <p class="text-sm font-medium text-gray-900">Baptized</p>
+                    <p :class="hintCls">
+                      ( Tick if this attendee is baptized. )
+                    </p>
+                  </div>
+                </label>
+
+                <label
+                  v-if="isCamp"
+                  class="w-full h-full flex gap-3 items-center sm:col-span-2 rounded-lg border border-gray-200 p-3"
+                >
+                  <input
+                    type="checkbox"
+                    v-model="form.is_guardian"
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div class="flex gap-1 sm:gap-3 align-center items-start flex-col sm:flex-row sm:items-center">
+                    <p class="text-sm font-medium text-gray-900">Guardian</p>
+                    <p :class="hintCls">
+                      ( Tick if this attendee is a guardian. )
+                    </p>
+                  </div>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -482,10 +597,10 @@ function onCongBlur() {
         </div>
       </div>
 
-      <!-- Receipt Preview Modal -->
+      <!-- Receipt preview modal -->
       <div
-        v-if="receipt.open && receipt.camper"
-        class="fixed inset-0 z-50 flex items-center justify-center px-3"
+        v-if="receipt.open && receipt.camper && isCamp"
+        class="fixed inset-0 z-50 flex items-center justify-center px-3 text-[1.05rem] sm:text-[1rem]"
         aria-modal="true"
         role="dialog"
       >
@@ -493,7 +608,6 @@ function onCongBlur() {
           class="absolute inset-0 bg-black/40"
           @click="closeReceiptPreview"
         ></div>
-
         <div
           class="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-gray-200"
         >
@@ -501,32 +615,44 @@ function onCongBlur() {
             class="flex items-center justify-between border-b border-gray-100 px-6 py-4"
           >
             <div>
-              <h3 class="text-base font-semibold text-gray-900">
+              <h3 class="text-lg sm:text-base font-semibold text-gray-900">
                 Receipt Preview
               </h3>
-              <p class="mt-0.5 text-xs text-gray-500">
+              <p class="mt-0.5 text-sm sm:text-xs text-gray-500">
                 Generated: {{ new Date().toLocaleString() }}
               </p>
             </div>
             <button
               @click="closeReceiptPreview"
-              class="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              class="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-lg sm:text-base"
             >
               ✕
             </button>
           </div>
 
           <div class="px-6 py-5">
-            <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div
+              class="rounded-xl border border-gray-200 bg-gray-50 p-8 sm:p-10 mb-6 flex flex-col text-[1.05rem] sm:text-sm"
+            >
+              <div class="flex items-center justify-center mb-5">
+                <img
+                  :src="headerLogoSrc"
+                  alt="Logo"
+                  class="h-10 w-auto"
+                  @error="onHeaderLogoError"
+                />
+              </div>
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-semibold text-gray-900">Youth Camp</p>
-                  <p class="text-xs text-gray-500">Payment Receipt (Preview)</p>
+                  <p class="text-base sm:text-sm font-semibold text-gray-900">
+                    {{ branding.activityName }}
+                  </p>
+                  <p class="text-xs sm:text-[0.8rem] text-gray-500">
+                    {{ receiptSubtitle }}
+                  </p>
                 </div>
-                <!-- Amount chip only shown for Camp -->
                 <div
-                  v-if="isCamp"
-                  class="rounded-full bg-indigo-600/10 px-3 py-1 text-xs font-semibold text-indigo-700"
+                  class="rounded-full bg-indigo-600/10 px-3 py-1 text-sm font-semibold text-indigo-700"
                 >
                   ₱{{ receipt.camper.amount }}
                 </div>
@@ -534,41 +660,67 @@ function onCongBlur() {
 
               <div class="my-4 h-px bg-gray-200"></div>
 
-              <dl class="space-y-2">
-                <div class="flex items-center justify-between text-sm">
+              <dl class="space-y-2 text-[1.05rem] sm:text-sm">
+                <div class="flex items-center justify-between">
+                  <dt class="text-gray-600">Date Issued</dt>
+                  <dd class="font-medium text-gray-900">
+                    {{ receipt.camper.created_at ? new Date(receipt.camper.created_at).toLocaleString() : new Date().toLocaleString() }}
+                  </dd>
+                </div>
+                <div class="flex items-center justify-between">
                   <dt class="text-gray-600">Invoice #</dt>
                   <dd class="font-medium text-gray-900">
                     {{ receipt.camper.invoice_no || "—" }}
                   </dd>
                 </div>
-                <div class="flex items-center justify-between text-sm">
-                  <dt class="text-gray-600">Attendee</dt>
+                <div class="flex items-center justify-between">
+                  <dt class="text-gray-600">{{ participantLabel }}</dt>
                   <dd class="font-medium text-gray-900">
                     {{ receipt.camper.first_name }}
                     {{ receipt.camper.last_name }}
                     <span
                       v-if="receipt.camper.nickname"
                       class="font-normal text-gray-500"
-                      >({{ receipt.camper.nickname }})</span
                     >
+                      ({{ receipt.camper.nickname }})
+                    </span>
                   </dd>
                 </div>
-                <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center justify-between">
                   <dt class="text-gray-600">Congregation</dt>
-                  <dd class="text-gray-900">
+                  <dd class="font-medium text-gray-900">
                     {{ receipt.camper.congregation || "-" }}
                   </dd>
                 </div>
-                <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center justify-between">
                   <dt class="text-gray-600">Paid</dt>
-                  <dd class="text-gray-900">Yes</dd>
+                  <dd class="text-gray-900 font-medium">Yes</dd>
                 </div>
               </dl>
 
-              <p class="mt-4 text-xs text-gray-500">
-                This is a preview of the receipt that will be sent to the
-                printer.
-              </p>
+              <div class="my-10 h-px bg-gray-200"></div>
+
+              <div>
+                <h3 class="text-base sm:text-sm font-semibold text-gray-900">
+                  Data Privacy Notice
+                </h3>
+                <p
+                  class="mt-2 text-[1rem] sm:text-sm text-gray-600 leading-relaxed"
+                >
+                  By registering, you consent to the collection and processing
+                  of your personal information for the purpose of organizing
+                  this church activity. Your data will be used solely for
+                  registration management, communication regarding the event,
+                  and safety purposes during the activity.
+                </p>
+                <p
+                  class="mt-2 text-[1rem] sm:text-sm text-gray-600 leading-relaxed"
+                >
+                  We are committed to protecting your privacy and will not share
+                  your information with third parties without your consent,
+                  except as required by law or for emergency situations.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -577,14 +729,14 @@ function onCongBlur() {
           >
             <button
               @click="closeReceiptPreview"
-              class="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              class="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-[1rem] sm:text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </button>
             <button
               :disabled="receipt.busy"
               @click="printFromPreview"
-              class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              class="rounded-lg bg-indigo-600 px-4 py-2.5 text-[1rem] sm:text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span v-if="receipt.busy">Printing…</span>
               <span v-else>Print</span>

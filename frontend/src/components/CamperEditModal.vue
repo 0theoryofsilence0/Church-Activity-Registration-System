@@ -2,7 +2,11 @@
 import { ref, watch, computed, onMounted } from "vue";
 import BaseModal from "./BaseModal.vue";
 import { branding } from "../services/branding";
-import { error as toastError, info as toastInfo, withLoading } from "../services/ui";
+import {
+  error as toastError,
+  info as toastInfo,
+  withLoading,
+} from "../services/ui";
 
 const props = defineProps({
   open: Boolean,
@@ -26,6 +30,8 @@ const form = ref({
   congregation: "",
   gender: "",
   is_leader: false,
+  is_baptized: false,
+  is_guardian: false,
   additional_info: "",
   sports: "",
 });
@@ -63,7 +69,8 @@ async function fetchCamperForEdit(id) {
     const data = await withLoading(async () => {
       const r = await fetchWithCreds(`${API}/api/campers/${id}`);
       const body = await r.json().catch(() => ({}));
-      if (!r.ok || !body.ok) throw new Error(body.message || "Failed to fetch attendee data.");
+      if (!r.ok || !body.ok)
+        throw new Error(body.message || "Failed to fetch attendee data.");
       return body;
     }, "Loading attendee details…");
 
@@ -75,6 +82,8 @@ async function fetchCamperForEdit(id) {
       congregation: data.camper.congregation || "",
       gender: data.camper.gender || "",
       is_leader: !!data.camper.is_leader,
+      is_baptized: !!data.camper.is_baptized,
+      is_guardian: !!data.camper.is_guardian,
       additional_info: data.camper.additional_info || "",
       sports: data.camper.sports || "",
     };
@@ -101,8 +110,13 @@ async function handleSubmit() {
 
   const payload = {
     ...form.value,
-    age: form.value.age === null || form.value.age === "" ? null : Number(form.value.age),
+    age:
+      form.value.age === null || form.value.age === ""
+        ? null
+        : Number(form.value.age),
     is_leader: form.value.is_leader ? 1 : 0,
+    is_baptized: form.value.is_baptized ? 1 : 0,
+    is_guardian: form.value.is_guardian ? 1 : 0,
     // If not Camp, don't send a sport preference (server ignores unknown fields anyway)
     ...(isCamp.value ? {} : { sports: "" }),
   };
@@ -144,6 +158,8 @@ function resetForm() {
     congregation: "",
     gender: "",
     is_leader: false,
+    is_baptized: false,
+    is_guardian: false,
     additional_info: "",
     sports: "",
   };
@@ -156,7 +172,9 @@ const showCongregationSuggestions = ref(false);
 const congregationQuery = ref("");
 
 const filteredCongregations = computed(() => {
-  const q = (congregationQuery.value || form.value.congregation || "").toLowerCase().trim();
+  const q = (congregationQuery.value || form.value.congregation || "")
+    .toLowerCase()
+    .trim();
   if (!q) return congregationsList.value;
   return congregationsList.value.filter((c) => c.toLowerCase().includes(q));
 });
@@ -189,13 +207,19 @@ function handleClose() {
 
 // Extracted handlers for template events
 function onCongInput(e) {
-  const val = e && e.target ? String(e.target.value || "") : String(form.value.congregation || "");
+  const val =
+    e && e.target
+      ? String(e.target.value || "")
+      : String(form.value.congregation || "");
   form.value.congregation = val;
   congregationQuery.value = val;
   showCongregationSuggestions.value = true;
 }
 function onCongFocus(e) {
-  const val = e && e.target ? String(e.target.value || "") : String(form.value.congregation || "");
+  const val =
+    e && e.target
+      ? String(e.target.value || "")
+      : String(form.value.congregation || "");
   congregationQuery.value = val;
   showCongregationSuggestions.value = true;
 }
@@ -207,10 +231,14 @@ function onCongBlur() {
 <template>
   <BaseModal
     :open="open"
-    :title="`Edit Attendee: ${camperData?.first_name || ''} ${camperData?.last_name || ''}`"
+    :title="`Edit Attendee: ${camperData?.first_name || ''} ${
+      camperData?.last_name || ''
+    }`"
     @close="handleClose"
   >
-    <div v-if="loading" class="p-6 text-center text-gray-500">Loading details...</div>
+    <div v-if="loading" class="p-6 text-center text-gray-500">
+      Loading details...
+    </div>
 
     <div
       v-else-if="formError && !submitting"
@@ -223,25 +251,48 @@ function onCongBlur() {
       <!-- Identity -->
       <div class="border-b border-gray-100 px-6 py-5 sm:px-8 z-50">
         <h2 class="mb-4 flex items-center gap-2">
-          <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold">1</span>
+          <span
+            class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold"
+            >1</span
+          >
           <span class="text-base font-semibold text-gray-900">Identity</span>
         </h2>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label class="block">
             <span :class="labelCls">First Name *</span>
-            <input v-model.trim="form.first_name" required :class="inputCls" placeholder="Juan" />
+            <input
+              v-model.trim="form.first_name"
+              required
+              :class="inputCls"
+              placeholder="Juan"
+            />
           </label>
           <label class="block">
             <span :class="labelCls">Surname *</span>
-            <input v-model.trim="form.last_name" required :class="inputCls" placeholder="Dela Cruz" />
+            <input
+              v-model.trim="form.last_name"
+              required
+              :class="inputCls"
+              placeholder="Dela Cruz"
+            />
           </label>
           <label class="block">
             <span :class="labelCls">Nickname</span>
-            <input v-model.trim="form.nickname" :class="inputCls" placeholder="Juanito (Optional)" />
+            <input
+              v-model.trim="form.nickname"
+              :class="inputCls"
+              placeholder="Juanito (Optional)"
+            />
           </label>
           <label class="block">
             <span :class="labelCls">Age</span>
-            <input v-model.number="form.age" type="number" min="0" :class="inputCls" placeholder="18" />
+            <input
+              v-model.number="form.age"
+              type="number"
+              min="0"
+              :class="inputCls"
+              placeholder="18"
+            />
           </label>
         </div>
       </div>
@@ -249,8 +300,13 @@ function onCongBlur() {
       <!-- Group & Role -->
       <div class="border-b border-gray-100 px-6 py-5 sm:px-8">
         <h2 class="mb-4 flex items-center gap-2">
-          <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold">2</span>
-          <span class="text-base font-semibold text-gray-900">Group & Role</span>
+          <span
+            class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold"
+            >2</span
+          >
+          <span class="text-base font-semibold text-gray-900"
+            >Group & Role</span
+          >
         </h2>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label class="block relative">
@@ -298,16 +354,50 @@ function onCongBlur() {
             />
           </label>
 
-          <div class="sm:col-span-2">
-            <label class="flex items-start gap-3 rounded-lg border border-gray-200 p-3">
+          <!-- Camp-only fields -->
+          <div class="flex gap-4 sm:col-span-2 w-full mt-5">
+            <label
+              class="w-full h-full flex items-center gap-3 sm:col-span-2 rounded-lg border border-gray-200 p-3"
+            >
               <input
                 type="checkbox"
                 v-model="form.is_leader"
-                class="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
               />
-              <div>
+              <div class="flex gap-3 align-center items-center">
                 <p class="text-sm font-medium text-gray-900">Church Leader</p>
-                <p :class="hintCls">Tick this box if this attendee is a leader.</p>
+                <p :class="hintCls">( Tick if this attendee is a leader. )</p>
+              </div>
+            </label>
+
+            <!-- Camp-only fields -->
+            <label
+              v-if="isCamp"
+              class="w-full h-full flex items-center gap-3 sm:col-span-2 rounded-lg border border-gray-200 p-3"
+            >
+              <input
+                type="checkbox"
+                v-model="form.is_baptized"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div class="flex gap-3 align-center items-center">
+                <p class="text-sm font-medium text-gray-900">Baptized</p>
+                <p :class="hintCls">( Tick if this attendee is baptized. )</p>
+              </div>
+            </label>
+
+            <label
+              v-if="isCamp"
+              class="w-full h-full flex items-center gap-3 sm:col-span-2 rounded-lg border border-gray-200 p-3"
+            >
+              <input
+                type="checkbox"
+                v-model="form.is_guardian"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div class="flex gap-3 align-center items-center">
+                <p class="text-sm font-medium text-gray-900">Guardian</p>
+                <p :class="hintCls">( Tick if this attendee is a guardian. )</p>
               </div>
             </label>
           </div>
@@ -317,8 +407,13 @@ function onCongBlur() {
       <!-- Additional Info -->
       <div class="px-6 py-5 sm:px-8">
         <h2 class="mb-4 flex items-center gap-2">
-          <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold">3</span>
-          <span class="text-base font-semibold text-gray-900">Additional Info</span>
+          <span
+            class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold"
+            >3</span
+          >
+          <span class="text-base font-semibold text-gray-900"
+            >Additional Info</span
+          >
         </h2>
         <label class="block">
           <span :class="labelCls">Allergies / Medical Conditions / Notes</span>

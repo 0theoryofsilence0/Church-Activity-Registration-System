@@ -4,8 +4,14 @@ import Modal from "../components/Modal.vue";
 import BaseModal from "../components/BaseModal.vue";
 import CamperEditModal from "../components/CamperEditModal.vue";
 import { auth } from "../services/auth";
+import carsLogo from "../assets/cars-logo.png";
 import { branding } from "../services/branding";
-import { success as toastSuccess, error as toastError, info as toastInfo, withLoading } from "../services/ui";
+import {
+  success as toastSuccess,
+  error as toastError,
+  info as toastInfo,
+  withLoading,
+} from "../services/ui";
 
 const isSuper = computed(() => auth.user && auth.user.role === "super");
 const isCamp = computed(() => branding.isCamp.value);
@@ -21,6 +27,8 @@ const congregation = ref("All");
 const age = ref("All");
 const gender = ref("All");
 const is_leader = ref("All");
+const is_baptized = ref("All");
+const is_guardian = ref("All");
 const search = ref("");
 const campers = ref([]);
 const loading = ref(false);
@@ -142,6 +150,8 @@ const congregations = computed(() => ["All", ...allCongregations.value]);
 const ages = computed(() => ["All", ...allAges.value]);
 const genders = computed(() => ["All", ...allGenders.value]);
 const is_leaders = computed(() => ["All", "Yes", "No"]);
+const is_baptizedOptions = computed(() => ["All", "Yes", "No"]);
+const is_guardians = computed(() => ["All", "Yes", "No"]);
 
 const isFilterActive = computed(() => {
   return (
@@ -149,6 +159,8 @@ const isFilterActive = computed(() => {
     age.value !== "All" ||
     gender.value !== "All" ||
     is_leader.value !== "All" ||
+    is_baptized.value !== "All" ||
+    is_guardian.value !== "All" ||
     search.value.trim() !== ""
   );
 });
@@ -158,6 +170,8 @@ function resetFilters() {
   age.value = "All";
   gender.value = "All";
   is_leader.value = "All";
+  is_baptized.value = "All";
+  is_guardian.value = "All";
   search.value = "";
 }
 
@@ -188,6 +202,10 @@ async function fetchCampers() {
     if (age.value !== "All") params.set("age", age.value);
     if (is_leader.value !== "All")
       params.set("is_leader", is_leader.value === "Yes" ? "1" : "0");
+    if (is_baptized.value !== "All")
+      params.set("is_baptized", is_baptized.value === "Yes" ? "1" : "0");
+    if (is_guardian.value !== "All")
+      params.set("is_guardian", is_guardian.value === "Yes" ? "1" : "0");
 
     const r = await fetchWithCreds(`${API}/api/campers?${params.toString()}`);
     if (!r.ok) {
@@ -226,6 +244,18 @@ async function printList() {
         gender: gender.value,
         is_leader:
           is_leader.value === "All" ? "All" : is_leader.value === "Yes" ? 1 : 0,
+        is_baptized:
+          is_baptized.value === "All"
+            ? "All"
+            : is_baptized.value === "Yes"
+            ? 1
+            : 0,
+        is_guardian:
+          is_guardian.value === "All"
+            ? "All"
+            : is_guardian.value === "Yes"
+            ? 1
+            : 0,
       };
       const r = await fetchWithCreds(`${API}/api/print-camper-list`, {
         method: "POST",
@@ -263,8 +293,9 @@ function exportToSheet() {
     "Gender",
     "Leader?",
   ];
-  if (isCamp.value) headers.push("Amount");
-  headers.push("Sports", "Additional Info");
+  if (isCamp.value) {
+    headers.push("Baptized?", "Guardian?", "Amount", "Sports", "Additional Info");
+  }
 
   const esc = (val) => {
     const s = val == null ? "" : String(val);
@@ -293,8 +324,16 @@ function exportToSheet() {
       c.gender ?? "-",
       c.is_leader ? "Yes" : "No",
     ];
-    if (isCamp.value) columns.push(`₱${c.amount}`);
-    columns.push(c.sports ?? "N/A", c.additional_info ?? "N/A");
+    if (isCamp.value) {
+      columns.push(
+        c.is_baptized ? "Yes" : "No",
+        c.is_guardian ? "Yes" : "No",
+        `₱${c.amount}`
+      );
+    }
+    if (isCamp.value) {
+      columns.push(c.sports ?? "N/A", c.additional_info ?? "N/A");
+    }
     lines.push(columns.map(esc).join(","));
   });
 
@@ -347,7 +386,9 @@ async function deleteCamper(id, fullName) {
           await fetchGrandTotal(); // keep the total in sync
           toastSuccess("Deleted", "Success");
         } else {
-          const msg = (j && (j.message || j.error)) || `Failed to delete (HTTP ${r.status})`;
+          const msg =
+            (j && (j.message || j.error)) ||
+            `Failed to delete (HTTP ${r.status})`;
           toastError(msg, "Error");
         }
       }, "Deleting attendee…");
@@ -383,11 +424,11 @@ onMounted(async () => {
   const onTeamsUpdated = (ev) => scheduleRefresh();
   const onTeamsCleared = (ev) => scheduleRefresh();
 
-  document.addEventListener('realtime:campers:created', onCamperCreated);
-  document.addEventListener('realtime:campers:updated', onCamperUpdated);
-  document.addEventListener('realtime:campers:deleted', onCamperDeleted);
-  document.addEventListener('realtime:teams:updated', onTeamsUpdated);
-  document.addEventListener('realtime:teams:cleared', onTeamsCleared);
+  document.addEventListener("realtime:campers:created", onCamperCreated);
+  document.addEventListener("realtime:campers:updated", onCamperUpdated);
+  document.addEventListener("realtime:campers:deleted", onCamperDeleted);
+  document.addEventListener("realtime:teams:updated", onTeamsUpdated);
+  document.addEventListener("realtime:teams:cleared", onTeamsCleared);
 
   // store cleanup refs on component for removal
   _idx_sse_cleanup = {
@@ -402,19 +443,22 @@ onMounted(async () => {
 onUnmounted(() => {
   const c = _idx_sse_cleanup;
   if (c) {
-    document.removeEventListener('realtime:campers:created', c.onCamperCreated);
-    document.removeEventListener('realtime:campers:updated', c.onCamperUpdated);
-    document.removeEventListener('realtime:campers:deleted', c.onCamperDeleted);
-    document.removeEventListener('realtime:teams:updated', c.onTeamsUpdated);
-    document.removeEventListener('realtime:teams:cleared', c.onTeamsCleared);
+    document.removeEventListener("realtime:campers:created", c.onCamperCreated);
+    document.removeEventListener("realtime:campers:updated", c.onCamperUpdated);
+    document.removeEventListener("realtime:campers:deleted", c.onCamperDeleted);
+    document.removeEventListener("realtime:teams:updated", c.onTeamsUpdated);
+    document.removeEventListener("realtime:teams:cleared", c.onTeamsCleared);
     _idx_sse_cleanup = null;
   }
 });
 
-watch([congregation, age, gender, is_leader], async () => {
-  await fetchCampers();
-  currentPage.value = 1;
-});
+watch(
+  [congregation, age, gender, is_leader, is_baptized, is_guardian],
+  async () => {
+    await fetchCampers();
+    currentPage.value = 1;
+  }
+);
 
 /* ---------- Search + sorting + paging ---------- */
 const filteredAndSortedCampers = computed(() => {
@@ -504,7 +548,7 @@ const peso = new Intl.NumberFormat("en-PH", {
 
 /* ---------- UI text for receipts/lists ---------- */
 const receiptSubtitle = computed(() =>
-  isCamp.value ? "Payment Receipt (Preview)" : "Registration Receipt (Preview)"
+  isCamp.value ? "Payment Receipt" : "Registration Receipt"
 );
 const participantLabel = computed(() =>
   isCamp.value ? "Camper" : "Participant"
@@ -519,12 +563,26 @@ const inputCls =
 const selectCls =
   "mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
 const labelCls = "text-sm font-medium text-gray-700";
+
+const headerLogoSrc = ref(carsLogo);
+function setHeaderLogoFromBranding() {
+  const v = branding.logo && branding.logo.value ? branding.logo.value : null;
+  if (v) headerLogoSrc.value = `/uploads/${v}`;
+  else headerLogoSrc.value = carsLogo;
+}
+function onHeaderLogoError() {
+  headerLogoSrc.value = carsLogo;
+}
+setHeaderLogoFromBranding();
+watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
 </script>
 
 <template>
   <div class="min-h-[calc(100vh-4rem)] bg-gray-50 py-8">
     <section class="mx-auto max-w-[100rem] px-4">
-      <header class="mb-6 flex items-end justify-between gap-4">
+      <header
+        class="mb-6 flex flex-col justify-between gap-4 lg:items-end lg:flex-row"
+      >
         <div>
           <h1 class="text-2xl font-semibold text-gray-900 tracking-tight">
             Attendees
@@ -533,9 +591,10 @@ const labelCls = "text-sm font-medium text-gray-700";
             Filter the list and print receipts or the full roster.
           </p>
         </div>
-        <div v-if="isCamp" class="flex gap-3 items-center">
+        <div class="flex gap-3 items-center flex-col lg:flex-row">
           <div
-            class="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200 items-center"
+            v-if="isCamp"
+            class="w-full lg:w-auto rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200 items-center"
             title="Total cash in hand across all PAID attendees"
           >
             Total Cash In Hand: {{ peso.format(grandTotalAmount) }}
@@ -543,14 +602,14 @@ const labelCls = "text-sm font-medium text-gray-700";
           <button
             v-if="isSuper"
             @click="openListPreview"
-            class="inline-flex items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-green-700"
+            class="w-full lg:w-auto inline-flex items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-green-700"
           >
             Print Attendees List
           </button>
           <button
             v-if="isSuper"
             @click="exportToSheet"
-            class="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
+            class="w-full lg:w-auto inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
           >
             Export to Sheet
           </button>
@@ -559,8 +618,10 @@ const labelCls = "text-sm font-medium text-gray-700";
 
       <!-- Filters -->
       <div class="mb-6 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-        <div class="mb-3 flex justify-between items-center gap-5">
-          <div class="w-4/5">
+        <div
+          class="mb-3 flex justify-between items-center gap-5 flex-col lg:flex-row w-full"
+        >
+          <div class="w-5/5 lg:w-4/5">
             <label class="block md:col-span-1">
               <span :class="labelCls">Search</span>
               <input
@@ -571,7 +632,7 @@ const labelCls = "text-sm font-medium text-gray-700";
               />
             </label>
           </div>
-          <div class="flex flex-col w-1/5">
+          <div class="flex flex-col w-5/5 lg:w-1/5">
             <span :class="labelCls">Reset Filter</span>
             <button
               @click="resetFilters"
@@ -583,7 +644,12 @@ const labelCls = "text-sm font-medium text-gray-700";
           </div>
         </div>
         <div
-          class="grid grid-cols-1 gap-4 sm:grid-cols-4 md:grid-cols-4 items-center"
+          class="grid grid-cols-1 gap-6 items-center"
+          :class="
+            isCamp
+              ? 'sm:grid-cols-3 md:grid-cols-6'
+              : 'sm:grid-cols-2 md:grid-cols-4'
+          "
         >
           <label class="block">
             <span :class="labelCls">Congregation</span>
@@ -609,6 +675,22 @@ const labelCls = "text-sm font-medium text-gray-700";
             <span :class="labelCls">Leader</span>
             <select v-model="is_leader" :class="selectCls">
               <option v-for="opt in is_leaders" :key="opt" :value="opt">
+                {{ opt }}
+              </option>
+            </select>
+          </label>
+          <label v-if="isCamp" class="block">
+            <span :class="labelCls">Baptized</span>
+            <select v-model="is_baptized" :class="selectCls">
+              <option v-for="opt in is_baptizedOptions" :key="opt" :value="opt">
+                {{ opt }}
+              </option>
+            </select>
+          </label>
+          <label v-if="isCamp" class="block">
+            <span :class="labelCls">Guardian</span>
+            <select v-model="is_guardian" :class="selectCls">
+              <option v-for="opt in is_guardians" :key="opt" :value="opt">
                 {{ opt }}
               </option>
             </select>
@@ -699,6 +781,28 @@ const labelCls = "text-sm font-medium text-gray-700";
                     {{ sortOrder === "asc" ? "▲" : "▼" }}
                   </span>
                 </th>
+
+                <th
+                  v-if="isCamp"
+                  class="px-4 py-3 text-left text-gray-600 text-xs uppercase tracking-wide cursor-pointer"
+                  @click="sortBy('is_baptized')"
+                >
+                  Baptized?
+                  <span v-if="sortKey === 'is_baptized'">
+                    {{ sortOrder === "asc" ? "▲" : "▼" }}
+                  </span>
+                </th>
+
+                <th
+                  v-if="isCamp"
+                  class="px-4 py-3 text-left text-gray-600 text-xs uppercase tracking-wide cursor-pointer"
+                  @click="sortBy('is_guardian')"
+                >
+                  Guardian?
+                  <span v-if="sortKey === 'is_guardian'">
+                    {{ sortOrder === "asc" ? "▲" : "▼" }}
+                  </span>
+                </th>
                 <!-- Amount header -->
                 <th
                   v-if="isCamp"
@@ -733,16 +837,18 @@ const labelCls = "text-sm font-medium text-gray-700";
                 <td v-if="isCamp" class="px-4 py-3 text-sm text-gray-700">
                   {{ c.invoice_no || "-" }}
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-900 flex gap-2 items-center">
-                   <div
-                      class="uppercase w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-sm font-semibold"
-                    >
-                      {{ (c.first_name || "").charAt(0)
-                      }}{{ (c.last_name || "").charAt(0) }}
-                    </div>
-                    <div class="text-sm font-medium capitalize">
-                        {{ c.first_name }} {{ c.last_name }}
-                      </div>
+                <td
+                  class="px-4 py-3 text-sm text-gray-900 flex gap-2 items-center"
+                >
+                  <div
+                    class="uppercase w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-sm font-semibold"
+                  >
+                    {{ (c.first_name || "").charAt(0)
+                    }}{{ (c.last_name || "").charAt(0) }}
+                  </div>
+                  <div class="text-sm font-medium capitalize">
+                    {{ c.first_name }} {{ c.last_name }}
+                  </div>
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-700 capitalize">
                   {{ c.nickname }}
@@ -768,6 +874,32 @@ const labelCls = "text-sm font-medium text-gray-700";
                     {{ c.is_leader ? "Yes" : "No" }}
                   </span>
                 </td>
+
+                <td v-if="isCamp" class="px-4 py-3 text-sm">
+                  <span
+                    :class="[
+                      'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                      c.is_baptized
+                        ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                        : 'bg-gray-50 text-gray-600 ring-1 ring-gray-200',
+                    ]"
+                  >
+                    {{ c.is_baptized ? "Yes" : "No" }}
+                  </span>
+                </td>
+
+                <td v-if="isCamp" class="px-4 py-3 text-sm">
+                  <span
+                    :class="[
+                      'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                      c.is_guardian
+                        ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                        : 'bg-gray-50 text-gray-600 ring-1 ring-gray-200',
+                    ]"
+                  >
+                    {{ c.is_guardian ? "Yes" : "No" }}
+                  </span>
+                </td>
                 <!-- Amount cell -->
                 <td
                   v-if="isCamp"
@@ -775,14 +907,19 @@ const labelCls = "text-sm font-medium text-gray-700";
                 >
                   ₱{{ c.amount }}
                 </td>
-                <td v-if="isCamp" class="px-4 py-3 text-sm text-gray-700 capitalize">
+                <td
+                  v-if="isCamp"
+                  class="px-4 py-3 text-sm text-gray-700 capitalize"
+                >
                   {{ c.sports || "N/A" }}
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-700 capitalize">
                   {{ c.additional_info || "N/A" }}
                 </td>
                 <td class="px-4 py-3">
-                  <div class="flex gap-2 items-center align-center text-center justify-center">
+                  <div
+                    class="flex gap-2 items-center align-center text-center justify-center"
+                  >
                     <button
                       @click="openEditModal(c)"
                       class="inline-flex items-center justify-center rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 shadow-sm transition hover:bg-indigo-50"
@@ -810,7 +947,7 @@ const labelCls = "text-sm font-medium text-gray-700";
               </tr>
               <tr v-if="!sortedCampers.length">
                 <td
-                  :colspan="isCamp ? 11 : 8"
+                  :colspan="isCamp ? 13 : 8"
                   class="px-4 py-6 text-center text-sm text-gray-500"
                 >
                   No attendees found
@@ -894,7 +1031,7 @@ const labelCls = "text-sm font-medium text-gray-700";
       <!-- Receipt preview modal -->
       <div
         v-if="receipt.open && receipt.camper && isCamp"
-        class="fixed inset-0 z-50 flex items-center justify-center px-3"
+        class="fixed inset-0 z-50 flex items-center justify-center px-3 text-[1.05rem] sm:text-[1rem]"
         aria-modal="true"
         role="dialog"
       >
@@ -909,44 +1046,69 @@ const labelCls = "text-sm font-medium text-gray-700";
             class="flex items-center justify-between border-b border-gray-100 px-6 py-4"
           >
             <div>
-              <h3 class="text-base font-semibold text-gray-900">
+              <h3 class="text-lg sm:text-base font-semibold text-gray-900">
                 Receipt Preview
               </h3>
-              <p class="mt-0.5 text-xs text-gray-500">
+              <p class="mt-0.5 text-sm sm:text-xs text-gray-500">
                 Generated: {{ new Date().toLocaleString() }}
               </p>
             </div>
             <button
               @click="closeReceiptPreview"
-              class="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              class="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-lg sm:text-base"
             >
               ✕
             </button>
           </div>
+
           <div class="px-6 py-5">
-            <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div
+              class="rounded-xl border border-gray-200 bg-gray-50 p-8 sm:p-10 mb-6 flex flex-col text-[1.05rem] sm:text-sm"
+            >
+              <div class="flex items-center justify-center mb-5">
+                <img
+                  :src="headerLogoSrc"
+                  alt="Logo"
+                  class="h-10 w-auto"
+                  @error="onHeaderLogoError"
+                />
+              </div>
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-semibold text-gray-900">
+                  <p class="text-base sm:text-sm font-semibold text-gray-900">
                     {{ branding.activityName }}
                   </p>
-                  <p class="text-xs text-gray-500">{{ receiptSubtitle }}</p>
+                  <p class="text-xs sm:text-[0.8rem] text-gray-500">
+                    {{ receiptSubtitle }}
+                  </p>
                 </div>
                 <div
-                  class="rounded-full bg-indigo-600/10 px-3 py-1 text-xs font-semibold text-indigo-700"
+                  class="rounded-full bg-indigo-600/10 px-3 py-1 text-sm font-semibold text-indigo-700"
                 >
                   ₱{{ receipt.camper.amount }}
                 </div>
               </div>
+
               <div class="my-4 h-px bg-gray-200"></div>
-              <dl class="space-y-2">
-                <div class="flex items-center justify-between text-sm">
+
+              <dl class="space-y-2 text-[1.05rem] sm:text-sm">
+                <div class="flex items-center justify-between">
+                  <dt class="text-gray-600">Date Issued</dt>
+                  <dd class="font-medium text-gray-900">
+                    {{
+                      receipt.camper.created_at
+                        ? new Date(receipt.camper.created_at).toLocaleString()
+                        : new Date().toLocaleString()
+                    }}
+                  </dd>
+                </div>
+                <div class="flex items-center justify-between">
                   <dt class="text-gray-600">Invoice #</dt>
                   <dd class="font-medium text-gray-900">
                     {{ receipt.camper.invoice_no || "—" }}
                   </dd>
                 </div>
-                <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center justify-between">
                   <dt class="text-gray-600">{{ participantLabel }}</dt>
                   <dd class="font-medium text-gray-900">
                     {{ receipt.camper.first_name }}
@@ -959,36 +1121,57 @@ const labelCls = "text-sm font-medium text-gray-700";
                     </span>
                   </dd>
                 </div>
-                <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center justify-between">
                   <dt class="text-gray-600">Congregation</dt>
-                  <dd class="text-gray-900">
+                  <dd class="font-medium text-gray-900">
                     {{ receipt.camper.congregation || "-" }}
                   </dd>
                 </div>
-                <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center justify-between">
                   <dt class="text-gray-600">Paid</dt>
-                  <dd class="text-gray-900">Yes</dd>
+                  <dd class="text-gray-900 font-medium">Yes</dd>
                 </div>
               </dl>
-              <p class="mt-4 text-xs text-gray-500">
-                This is a preview of the receipt that will be sent to the
-                printer.
-              </p>
+
+              <div class="my-10 h-px bg-gray-200"></div>
+
+              <div>
+                <h3 class="text-base sm:text-sm font-semibold text-gray-900">
+                  Data Privacy Notice
+                </h3>
+                <p
+                  class="mt-2 text-[1rem] sm:text-sm text-gray-600 leading-relaxed"
+                >
+                  By registering, you consent to the collection and processing
+                  of your personal information for the purpose of organizing
+                  this church activity. Your data will be used solely for
+                  registration management, communication regarding the event,
+                  and safety purposes during the activity.
+                </p>
+                <p
+                  class="mt-2 text-[1rem] sm:text-sm text-gray-600 leading-relaxed"
+                >
+                  We are committed to protecting your privacy and will not share
+                  your information with third parties without your consent,
+                  except as required by law or for emergency situations.
+                </p>
+              </div>
             </div>
           </div>
+
           <div
             class="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4"
           >
             <button
               @click="closeReceiptPreview"
-              class="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              class="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-[1rem] sm:text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </button>
             <button
               :disabled="receipt.busy"
               @click="printFromPreview"
-              class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              class="rounded-lg bg-indigo-600 px-4 py-2.5 text-[1rem] sm:text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span v-if="receipt.busy">Printing…</span>
               <span v-else>Print</span>
@@ -1022,48 +1205,40 @@ const labelCls = "text-sm font-medium text-gray-700";
             <tr>
               <th
                 class="px-3 py-2 text-left font-semibold text-gray-600 cursor-pointer"
-                @click="sortBy('first_name')"
               >
                 Name
-                <span v-if="sortKey === 'first_name'">
-                  {{ sortOrder === "asc" ? "▲" : "▼" }}
-                </span>
               </th>
               <th
                 class="px-3 py-2 text-left font-semibold text-gray-600 cursor-pointer"
-                @click="sortBy('congregation')"
               >
                 Congregation
-                <span v-if="sortKey === 'congregation'">
-                  {{ sortOrder === "asc" ? "▲" : "▼" }}
-                </span>
               </th>
               <th
                 class="px-3 py-2 text-left font-semibold text-gray-600 cursor-pointer"
-                @click="sortBy('age')"
               >
                 Age
-                <span v-if="sortKey === 'age'">
-                  {{ sortOrder === "asc" ? "▲" : "▼" }}
-                </span>
               </th>
               <th
                 class="px-3 py-2 text-left font-semibold text-gray-600 cursor-pointer"
-                @click="sortBy('gender')"
               >
                 Gender
-                <span v-if="sortKey === 'gender'">
-                  {{ sortOrder === "asc" ? "▲" : "▼" }}
-                </span>
               </th>
               <th
                 class="px-3 py-2 text-left font-semibold text-gray-600 cursor-pointer"
-                @click="sortBy('is_leader')"
               >
                 Leader?
-                <span v-if="sortKey === 'is_leader'">
-                  {{ sortOrder === "asc" ? "▲" : "▼" }}
-                </span>
+              </th>
+              <th
+                v-if="isCamp"
+                class="px-3 py-2 text-left font-semibold text-gray-600 cursor-pointer"
+              >
+                Baptized?
+              </th>
+              <th
+                v-if="isCamp"
+                class="px-3 py-2 text-left font-semibold text-gray-600 cursor-pointer"
+              >
+                Guardian?
               </th>
             </tr>
           </thead>
@@ -1074,9 +1249,18 @@ const labelCls = "text-sm font-medium text-gray-700";
               <td class="px-3 py-2">{{ c.age || "-" }}</td>
               <td class="px-3 py-2">{{ c.gender || "-" }}</td>
               <td class="px-3 py-2">{{ c.is_leader ? "Yes" : "No" }}</td>
+              <td v-if="isCamp" class="px-3 py-2">
+                {{ c.is_baptized ? "Yes" : "No" }}
+              </td>
+              <td v-if="isCamp" class="px-3 py-2">
+                {{ c.is_guardian ? "Yes" : "No" }}
+              </td>
             </tr>
             <tr v-if="!campers.length">
-              <td colspan="5" class="px-3 py-4 text-center text-gray-500">
+              <td
+                class="px-3 py-4 text-center text-gray-500"
+                :colspan="isCamp ? 7 : 5"
+              >
                 No campers found
               </td>
             </tr>

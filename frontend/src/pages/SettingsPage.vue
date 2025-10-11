@@ -6,7 +6,9 @@ import { useRouter } from "vue-router";
 import { auth } from "../services/auth";
 import { branding } from "../services/branding";
 import { success as toastSuccess, error as toastError, withLoading } from "../services/ui";
+import Modal from "../components/Modal.vue";
 
+const API = import.meta.env.VITE_API || '';
 const router = useRouter();
 const name = ref("");
 const type = ref("Camp");
@@ -30,6 +32,15 @@ const selectedFileName = ref(null);
 const selectedFile = ref(null);
 const fileInput = ref(null);
 
+// Modal state for database reset confirmation
+const resetModal = ref({
+  open: false,
+  step: 1, // 1 = first warning, 2 = final confirmation
+  title: "",
+  message: "",
+  onConfirm: null
+});
+
 async function save() {
   const payload = { name: name.value.trim(), type: type.value };
   if (isCamp.value) payload.fee = Number(fee.value) || 0;
@@ -39,7 +50,7 @@ async function save() {
     });
 
     if (res?.ok) {
-      toastSuccess("Settings saved", "Success");
+      // toastSuccess("Settings saved", "Success");
       // navigate back after the loader hides (withLoading enforces min duration)
       // toast is global so it will persist across route change
       setTimeout(() => {
@@ -103,7 +114,7 @@ async function uploadLogo() {
     if (res?.ok) {
       // update branding service
       branding.logo.value = res.file || null;
-      toastSuccess('Logo uploaded', 'Success');
+      // toastSuccess('Logo uploaded', 'Success');
       // clear preview
     previewData.value = null;
     selectedFileName.value = null;
@@ -119,6 +130,54 @@ async function uploadLogo() {
   } catch (e) {
     toastError(e?.message || 'Failed to upload logo', 'Error');
   }
+}
+
+function resetDatabase() {
+  resetModal.value = {
+    open: true,
+    step: 1,
+    title: "⚠️ DANGER: Reset Database",
+    message: "This will permanently delete ALL camper registrations and cannot be undone. Are you absolutely sure you want to continue?",
+    onConfirm: showFinalWarning
+  };
+}
+
+function showFinalWarning() {
+  resetModal.value = {
+    open: true,
+    step: 2,
+    title: "🚨 FINAL WARNING",
+    message: "This is your LAST CHANCE to cancel. All registration data will be permanently lost and cannot be recovered. This action is irreversible.",
+    onConfirm: executeReset
+  };
+}
+
+async function executeReset() {
+  resetModal.value.open = false;
+  
+  try {
+    const response = await withLoading("Resetting database…", async () => {
+      return await fetch(`${API}/api/admin/reset-database`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    
+    const data = await response.json().catch(() => ({}));
+    
+    if (response.ok && data.ok) {
+      toastSuccess(`Database reset complete. ${data.deletedCount || 0} records deleted.`, "Reset Complete");
+    } else {
+      toastError(data.error || "Failed to reset database", "Error");
+    }
+  } catch (e) {
+    toastError("Failed to reset database", "Error");
+  }
+}
+
+function cancelReset() {
+  resetModal.value.open = false;
 }
 </script>
 
@@ -206,8 +265,34 @@ async function uploadLogo() {
           </div>
         </div>
       </div>
+      
+      <!-- Danger Zone -->
+      <div class="pt-6 border-t border-red-200">
+        <h2 class="text-lg font-medium mb-2 text-red-700">Danger Zone</h2>
+        <p class="text-sm text-red-600 mb-4">⚠️ These actions are irreversible and will permanently delete data.</p>
+        
+        <button
+          @click="resetDatabase"
+          class="rounded-md bg-red-600 text-white px-4 py-2 text-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+        >
+          Reset Database
+        </button>
+        <p class="mt-2 text-xs text-red-500">This will permanently delete all camper registrations.</p>
+      </div>
     </div>
 
     <div v-else class="text-sm text-gray-600">Forbidden</div>
   </div>
+
+  <!-- Database Reset Confirmation Modal -->
+  <Modal
+    :open="resetModal.open"
+    :title="resetModal.title"
+    :message="resetModal.message"
+    mode="confirm"
+    :ok-text="resetModal.step === 2 ? 'YES, DELETE EVERYTHING' : 'Continue'"
+    :cancel-text="resetModal.step === 2 ? 'Cancel (Safe)' : 'Cancel'"
+    @ok="resetModal.onConfirm"
+    @cancel="cancelReset"
+  />
 </template>

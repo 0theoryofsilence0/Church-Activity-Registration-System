@@ -1002,7 +1002,6 @@ function exportTeams() {
                   <td colspan="6" class="py-2">
                     <div class="flex items-center justify-between">
                       <div>Count: {{ team.members.length }}</div>
-                      <div class="text-sm text-gray-500">Avg age: {{ teamStats(team).avgAge }}</div>
                       <div class="text-sm text-gray-500">Genders: {{ teamStats(team).gendersStr }}</div>
                     </div>
                   </td>

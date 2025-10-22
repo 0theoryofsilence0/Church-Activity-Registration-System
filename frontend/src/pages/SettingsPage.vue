@@ -41,6 +41,9 @@ const resetModal = ref({
   onConfirm: null
 });
 
+// Thermal printer testing state
+const testingPrinter = ref(false);
+
 async function save() {
   const payload = { name: name.value.trim(), type: type.value };
   if (isCamp.value) payload.fee = Number(fee.value) || 0;
@@ -179,6 +182,32 @@ async function executeReset() {
 function cancelReset() {
   resetModal.value.open = false;
 }
+
+async function testThermalPrinter() {
+  testingPrinter.value = true;
+  
+  try {
+    const response = await withLoading("Testing thermal printer...", async () => {
+      return await fetch(`${API}/api/test-thermal-printer`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    
+    const data = await response.json().catch(() => ({}));
+    
+    if (response.ok && data.ok) {
+      toastSuccess("Thermal printer test successful! Check your printer for the test receipt.", "Printer Test");
+    } else {
+      toastError(data.error || "Thermal printer test failed", "Printer Test Failed");
+    }
+  } catch (e) {
+    toastError("Failed to test thermal printer: " + e.message, "Error");
+  } finally {
+    testingPrinter.value = false;
+  }
+}
 </script>
 
 <template>
@@ -264,6 +293,21 @@ function cancelReset() {
             <p class="mt-2 text-xs text-gray-500">Max 5MB. PNG/JPEG recommended.</p>
           </div>
         </div>
+      </div>
+
+      <!-- Thermal Printer Testing -->
+      <div class="pt-6 border-t border-gray-200">
+        <h2 class="text-lg font-medium mb-2 text-gray-900">Thermal Printer</h2>
+        <p class="text-sm text-gray-600 mb-4">Test your POS-58 thermal printer connection and print a sample receipt.</p>
+        
+        <button
+          @click="testThermalPrinter"
+          :disabled="testingPrinter"
+          class="rounded-md bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {{ testingPrinter ? 'Testing...' : 'Test Thermal Printer' }}
+        </button>
+        <p class="mt-2 text-xs text-gray-500">This will print a test receipt to verify your POS-58 printer is working.</p>
       </div>
       
       <!-- Danger Zone -->

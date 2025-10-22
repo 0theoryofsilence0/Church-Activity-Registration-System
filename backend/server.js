@@ -13,6 +13,10 @@ import dayjs from "dayjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import ThermalPrinter from 'node-thermal-printer';
+const { PrinterTypes, CharacterSet, BreakLine } = ThermalPrinter;
+import { spawn } from 'child_process';
+import os from 'os';
 
 dotenv.config();
 
@@ -307,6 +311,7 @@ if (!getSetting("activity_type")) setSetting("activity_type", DEFAULT_ACTIVITY_T
 if (!getSetting("registration_fee")) setSetting("registration_fee", DEFAULT_REGISTRATION_FEE);
 
 const getActivityType = () => (getSetting("activity_type") || "Camp");
+const getActivityName = () => (getSetting("activity_name") || DEFAULT_ACTIVITY_NAME);
 const getRegistrationFee = () => {
   return getActivityType() === "Camp"
     ? Number(getSetting("registration_fee") || "0") || 0
@@ -357,44 +362,483 @@ function toSafeFilename(s, fallback = "file") {
   return cleaned || fallback;
 }
 
+
+
 function generateReceiptPDF(
   { receiptNo, invoiceNo, fullName, congregation, amount, datetime },
   outPath
 ) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 36 });
+    // --- Paper presets (points). 1in = 72pt. 58mm ≈ 2.283in ≈ 164pt.
+    const PAPER = process.env.RECEIPT_PAPER || '58'; // '58' | '80'
+    // 58mm receipt width ≈ 164pt; we give it ~180pt to avoid clipping.
+    const widthPt = 180;                 // set RECEIPT_PAPER=80 later and bump to ~226 if you move to 80mm
+    const margin  = 8;
+    const usable = widthPt - (margin * 2); // Calculate usable width
+    const doc = new PDFDocument({ size: [widthPt, 800], margin }); // height will auto-extend as needed
+
     const stream = fs.createWriteStream(outPath);
     doc.pipe(stream);
 
-    const activityName = getSetting("activity_name") || DEFAULT_ACTIVITY_NAME;
-      // include branding logo if present
-      const logoFile = getSetting('branding_logo');
-      if (logoFile) {
-        const logoPath = path.join(UPLOADS_DIR, String(logoFile));
-        try { if (fs.existsSync(logoPath)) { doc.image(logoPath, { width: 100 }); doc.moveDown(0.5); } } catch (e) {}
-      }
-    const type = getActivityType();
+    const currentDate = new Date().toLocaleString('en-PH', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+    
+    const formattedDate = currentDate.substring(0, 20);
 
-    doc.fontSize(16).text(`${activityName} — ${type === "Camp" ? "Payment Receipt" : "Registration Receipt"}`);
-    doc.moveDown(0.5);
-    doc.fontSize(12).text(`Generated: ${datetime}`);
-    doc.text(`Receipt #: ${receiptNo}`);
-    if (invoiceNo) doc.text(`Invoice #: ${invoiceNo}`);
-    doc.text(`Date & Time: ${datetime}`);
-    doc.moveDown(0.5);
-    doc.text(`Participant: ${fullName}`);
-    doc.text(`Congregation: ${congregation || "-"}`);
-    doc.text(`Amount: ₱${amount}`);
-    doc.moveDown(1).text("Thank you! See you at the event.");
+    // Use larger font sizes since page is narrow - optimized for thermal receipt
+    doc.fontSize(12).text('CHURCH ACTIVITY', { align: 'center', width: usable });
+    doc.fontSize(12).text('PAYMENT RECEIPT', { align: 'center', width: usable });
+    doc.moveDown(0.3);
+    doc.fontSize(8).text('================================', { align: 'center', width: usable });
+
+    doc.moveDown(0.3);
+    doc.fontSize(8).text(`Date: ${formattedDate}`, { width: usable });
+    doc.text(`Receipt: ${receiptNo}`, { width: usable });
+    doc.text(`Invoice: ${invoiceNo}`, { width: usable });
+
+    doc.moveDown(0.3);
+    doc.fontSize(8).text('CUSTOMER INFO:', { width: usable });
+    // Split long names if needed
+    if (fullName.length > 32) {
+      doc.text(fullName.substring(0, 32), { width: usable });
+      doc.text(fullName.substring(32), { width: usable });
+    } else {
+      doc.text(`Name: ${fullName}`, { width: usable });
+    }
+    doc.text(`Congregation: ${congregation || 'N/A'}`, { width: usable });
+
+    doc.moveDown(0.3);
+    doc.text('PAYMENT DETAILS:', { width: usable });
+    doc.text('--------------------------------------------------------', { width: usable, align: 'center' });
+    
+    // Right-align amounts with proper spacing
+    const fee = `PHP ${amount}`;
+    const regLine = `Reg Fee${' '.repeat(32 - 7 - fee.length)}${fee}`;
+    const totalLine = `Total${' '.repeat(32 - 5 - fee.length)}${fee}`;
+    const paidLine = `Paid${' '.repeat(32 - 4 - fee.length)}${fee}`;
+    const changeLine = `Change${' '.repeat(32 - 6 - 11)}PHP   0.00`;
+    
+    doc.text(regLine, { width: usable });
+    doc.text('--------------------------------------------------------', { align: 'center', width: usable });
+    doc.text(totalLine, { width: usable });
+    doc.text(paidLine, { width: usable });
+    doc.text('================================', { align: 'center', width: usable });
+
+    doc.moveDown(0.3);
+    doc.fontSize(12).text('PAID IN FULL', { align: 'center', width: usable });
+    doc.moveDown(0.2);
+    doc.fontSize(8).text('Thank you for your payment!', { align: 'center', width: usable });
+    doc.moveDown(0.2);
+    doc.text('This serves as your', { align: 'center', width: usable });
+    doc.text('official receipt and proof of payment.', { align: 'center', width: usable });
+    doc.moveDown(0.2);
+    doc.text('Keep this receipt for your records', { align: 'center', width: usable });
+    doc.moveDown(4);
+
+    // allow content to grow; if we ever overflow, start a new short page
     doc.end();
-
-    stream.on("finish", () => resolve(outPath));
-    stream.on("error", reject);
+    stream.on('finish', () => resolve(outPath));
+    stream.on('error', reject);
   });
 }
 
+
 async function autoPrint(filePath, printerName) {
   await print(filePath, printerName ? { printer: printerName } : undefined);
+}
+
+// Raw thermal printing using Windows commands and direct file writing
+async function rawThermalPrint(receiptText, printerPort = 'USB001') {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log(`Attempting raw print to ${printerPort}`);
+      
+      // Create ESC/POS commands using Buffer for proper binary encoding
+      const ESC = 0x1B;
+      const GS = 0x1D;
+      
+      // Build command arrays
+      const INIT = [ESC, 0x40];                    // Initialize printer
+      const CENTER = [ESC, 0x61, 0x01];            // Center align
+      const LEFT = [ESC, 0x61, 0x00];              // Left align
+      const BOLD_ON = [ESC, 0x45, 0x01];           // Bold on
+      const BOLD_OFF = [ESC, 0x45, 0x00];          // Bold off
+      const CUT = [GS, 0x56, 0x00];                // Cut paper (full cut)
+      const LF = [0x0A];                           // Line feed
+      
+      // Helper function to add text
+      const text = (str) => Buffer.from(str, 'ascii');
+      
+      // Build the receipt as a buffer - each command should be separate from text
+      const bufferParts = [
+        Buffer.from(INIT),
+        Buffer.from(LF),
+        Buffer.from(LF),  // Extra line feeds after init to clear any issues
+        Buffer.from(CENTER),
+        Buffer.from(BOLD_ON),
+        text('CHURCH ACTIVITY'),
+        Buffer.from(BOLD_OFF),
+        Buffer.from(LF),
+        Buffer.from(BOLD_ON),
+        text('PAYMENT RECEIPT'),
+        Buffer.from(BOLD_OFF),
+        Buffer.from(LF),
+        Buffer.from(LF),
+        text('================================'),
+        Buffer.from(LF),
+        Buffer.from(LF),
+        Buffer.from(LEFT),
+        text(receiptText),
+        Buffer.from(LF),
+        Buffer.from(LF),
+        Buffer.from(CENTER),
+        Buffer.from(BOLD_ON),
+        text('PAID IN FULL'),
+        Buffer.from(BOLD_OFF),
+        Buffer.from(LF),
+        Buffer.from(LF),
+        text('Thank you for your payment!'),
+        Buffer.from(LF),
+        text('See you at the event!'),
+        Buffer.from(LF),
+        Buffer.from(LF),
+        text('This serves as your'),
+        Buffer.from(LF),
+        text('official receipt and'),
+        Buffer.from(LF),
+        text('proof of payment.'),
+        Buffer.from(LF),
+        Buffer.from(LF),
+        text('Keep this receipt'),
+        Buffer.from(LF),
+        text('for your records'),
+        Buffer.from(LF),
+        Buffer.from(LF),
+        Buffer.from(LF),
+        Buffer.from(LF),
+        Buffer.from(CUT)
+      ];
+      
+      const rawData = Buffer.concat(bufferParts);
+
+      // Get printer name from environment - use exact name from Windows
+      const printerName = process.env.THERMAL_PRINTER_NAME || 'POSPrinter POS58';
+
+      // Create temp file with .prn extension
+      const tempFile = path.join(os.tmpdir(), `receipt_${Date.now()}.prn`);
+      fs.writeFileSync(tempFile, rawData);
+      console.log(`Created temp file: ${tempFile}`);
+      
+      // Use CMD copy command to send to printer - this is the most reliable method
+      const copyCommand = `copy /b "${tempFile}" "\\\\localhost\\${printerName}"`;
+      console.log(`Executing: ${copyCommand}`);
+      
+      const cmdProcess = spawn('cmd.exe', ['/c', copyCommand], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      cmdProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      cmdProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      cmdProcess.on('close', (code) => {
+        console.log(`CMD output: ${stdout}`);
+        if (stderr) console.log(`CMD stderr: ${stderr}`);
+        
+        // Clean up temp file
+        try {
+          fs.unlinkSync(tempFile);
+        } catch (e) {
+          console.log('Could not delete temp file:', e.message);
+        }
+
+        if (code === 0 && stdout.includes('copied')) {
+          console.log(`Successfully sent to printer: ${printerName}`);
+          resolve();
+        } else {
+          reject(new Error(`Copy command failed with code ${code}`));
+        }
+      });
+
+      cmdProcess.on('error', (error) => {
+        // Clean up temp file
+        try {
+          fs.unlinkSync(tempFile);
+        } catch (e) {}
+        reject(new Error(`CMD process error: ${error.message}`));
+      });
+
+    } catch (error) {
+      reject(new Error(`Raw print setup error: ${error.message}`));
+    }
+  });
+}
+
+// Thermal printer function using node-thermal-printer (RESTORED WORKING VERSION)
+async function printThermalReceipt(receiptData) {
+  // Check if thermal printing is enabled
+  if (process.env.THERMAL_PRINTER_ENABLED !== 'true') {
+    throw new Error('Thermal printing is disabled - using PDF fallback');
+  }
+
+  try {
+    const activityName = getActivityName();
+    const currentDate = new Date().toLocaleString('en-PH', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+
+    // Force use USB port from environment variables - bypass driver detection
+    const printerPort = process.env.THERMAL_PRINTER_PORT || 'USB001';
+    const printerName = process.env.THERMAL_PRINTER_NAME || 'POS-58';
+    
+    console.log(`Attempting to print to thermal printer: ${printerName} on port ${printerPort}`);
+
+    // Prioritize the working interface - "Generic / Text Only" was working!
+    const interfaceOptions = [
+      'printer:Generic / Text Only',       // This one works! Put it first
+      `printer:${printerName}`,           // Direct printer name from env
+      `printer:${printerPort}`,           // USB port from env (USB001)
+      'printer:POS-58',                   // Specific POS printer name
+      'printer:Receipt Printer',          // Generic receipt printer
+      'tcp://127.0.0.1:9100',            // Network fallback
+    ];
+
+    let printer = null;
+    let connected = false;
+    let usedInterface = null;
+
+    // Force attempt each interface without strict connection checking
+    for (const iface of interfaceOptions) {
+      try {
+        console.log(`Trying interface: ${iface}`);
+        
+        printer = new ThermalPrinter.printer({
+          type: PrinterTypes.EPSON,
+          interface: iface,
+          characterSet: CharacterSet.PC437_USA,
+          removeSpecialCharacters: false,
+          lineCharacter: "-",
+          width: 32, // Set to 32 characters for 58mm paper
+          options: {
+            timeout: 1000, // Very short timeout
+          }
+        });
+
+        // For Generic / Text Only and USB interfaces, skip connection check
+        if (iface.includes('Generic') || iface.includes('USB') || iface.includes(printerName)) {
+          console.log(`Using known working interface: ${iface}`);
+          connected = true;
+          usedInterface = iface;
+          break;
+        } else {
+          // Only check connection for other interfaces
+          try {
+            connected = await Promise.race([
+              printer.isPrinterConnected(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500))
+            ]);
+            if (connected) {
+              console.log(`Connected to thermal printer via: ${iface}`);
+              usedInterface = iface;
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      } catch (e) {
+        console.log(`Interface ${iface} failed:`, e.message);
+        continue;
+      }
+    }
+
+    if (!connected) {
+      throw new Error('Could not establish any printer interface - falling back to PDF');
+    }
+
+    console.log(`Using printer interface: ${usedInterface}`);
+
+    // Build receipt content optimized for 58mm thermal printer (32 chars width)
+    printer.alignCenter();
+    printer.bold(true);
+    printer.println('CHURCH ACTIVITY');
+    printer.println('PAYMENT RECEIPT');
+    printer.bold(false);
+    printer.newLine();
+    printer.println('================================');
+    printer.newLine();
+    
+    printer.alignLeft();
+    // Format date to fit width (MM/DD/YYYY HH:MM:SS)
+    const formattedDate = currentDate.replace(/\//g, '/').substring(0, 20);
+    printer.println(`Date: ${formattedDate}`);
+    printer.println(`Receipt: ${receiptData.receiptNo}`);
+    printer.println(`Invoice: ${receiptData.invoiceNo}`);
+    printer.newLine();
+    
+    printer.bold(true);
+    printer.println('CUSTOMER INFO:');
+    printer.bold(false);
+    // Split long names into multiple lines if needed
+    const name = receiptData.fullName;
+    if (name.length > 32) {
+      printer.println(name.substring(0, 32));
+      printer.println(name.substring(32));
+    } else {
+      printer.println(name);
+    }
+    printer.println(`Cong: ${receiptData.congregation || 'N/A'}`);
+    printer.newLine();
+    
+    printer.bold(true);
+    printer.println('PAYMENT DETAILS:');
+    printer.bold(false);
+    printer.println('--------------------------------');
+    // Right-align amounts with proper spacing
+    const fee = `PHP ${receiptData.amount}`;
+    const regLine = `Reg Fee${' '.repeat(32 - 7 - fee.length)}${fee}`;
+    printer.println(regLine.substring(0, 32));
+    printer.println('--------------------------------');
+    
+    const totalLine = `Total${' '.repeat(32 - 5 - fee.length)}${fee}`;
+    const paidLine = `Paid${' '.repeat(32 - 4 - fee.length)}${fee}`;
+    const changeLine = `Change${' '.repeat(32 - 6 - 11)}PHP   0.00`;
+    
+    printer.println(totalLine.substring(0, 32));
+    printer.println(paidLine.substring(0, 32));
+    printer.println('================================');
+    printer.newLine();
+    
+    printer.alignCenter();
+    printer.bold(true);
+    printer.println('PAID IN FULL');
+    printer.bold(false);
+    printer.newLine();
+    printer.println('Thank you for your payment!');
+    printer.newLine();
+    printer.setTextSize(0, 0); // Small text for footer
+    printer.println('This serves as your');
+    printer.println('official receipt and');
+    printer.println('proof of payment.');
+    printer.newLine();
+    printer.println('Keep this receipt');
+    printer.println('for your records');
+    
+    printer.newLine();
+    printer.newLine();
+    printer.newLine();
+    printer.cut();
+
+    // Execute print - actually send to printer
+    try {
+      // Get the print buffer
+      const buffer = await printer.getBuffer();
+      console.log(`Print buffer generated: ${buffer.length} bytes`);
+
+      // Try multiple methods to ensure printing works
+      let printed = false;
+
+      // Method 1: Use node-thermal-printer execute
+      if (usedInterface.includes('Generic') || usedInterface.includes('Text Only')) {
+        try {
+          await Promise.race([
+            printer.execute(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          ]);
+          console.log(`Thermal receipt sent via node-thermal-printer: ${usedInterface}`);
+          printed = true;
+        } catch (execError) {
+          console.log(`Node-thermal-printer execute failed: ${execError.message}, trying raw method`);
+        }
+      } else {
+        await printer.execute();
+        console.log(`Thermal receipt sent via ${usedInterface}`);
+        printed = true;
+      }
+
+      // Method 2: If Method 1 failed, try raw USB port writing
+      if (!printed) {
+        const printerPort = process.env.THERMAL_PRINTER_PORT || 'USB001';
+        try {
+          console.log(`Attempting raw write to port: ${printerPort}`);
+          const portPath = `\\\\.\\${printerPort}`;
+          fs.writeFileSync(portPath, buffer);
+          console.log(`Raw write successful to ${portPath}`);
+          printed = true;
+        } catch (rawError) {
+          console.log(`Raw write failed: ${rawError.message}`);
+        }
+      }
+
+      if (!printed) {
+        throw new Error('All printing methods failed');
+      }
+
+    } catch (executeError) {
+      console.error(`Print execution failed:`, executeError.message);
+      throw executeError;
+    }
+
+  } catch (error) {
+    console.error('Node-thermal-printer failed, trying raw printing:', error);
+    
+    // Fallback to raw printing via USB port with optimized format for 32 char width
+    try {
+      // Recalculate currentDate for this scope
+      const currentDate = new Date().toLocaleString('en-PH', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+      });
+      
+      // Format amounts with proper spacing
+      const fee = `PHP ${receiptData.amount}`;
+      const name = receiptData.fullName;
+      const nameLine1 = name.length > 32 ? name.substring(0, 32) : name;
+      const nameLine2 = name.length > 32 ? name.substring(32) : '';
+      
+      const regLine = `Reg Fee${' '.repeat(32 - 7 - fee.length)}${fee}`;
+      const totalLine = `Total${' '.repeat(32 - 5 - fee.length)}${fee}`;
+      const paidLine = `Paid${' '.repeat(32 - 4 - fee.length)}${fee}`;
+      const changeLine = `Change${' '.repeat(32 - 6 - 11)}PHP   0.00`;
+      
+      const formattedDate = currentDate.substring(0, 20);
+      
+      const receiptText = `Date: ${formattedDate}
+Receipt: ${receiptData.receiptNo}
+Invoice: ${receiptData.invoiceNo}
+
+CUSTOMER INFO:
+${nameLine1}${nameLine2 ? '\n' + nameLine2 : ''}
+Cong: ${receiptData.congregation || 'N/A'}
+
+PAYMENT DETAILS:
+--------------------------------
+${regLine}
+--------------------------------
+${totalLine}
+${paidLine}
+================================`;
+
+      const printerPort = process.env.THERMAL_PRINTER_PORT || 'USB001';
+      await rawThermalPrint(receiptText, printerPort);
+      console.log('Raw thermal printing succeeded');
+      
+    } catch (rawError) {
+      console.error('Raw thermal printing also failed:', rawError);
+      throw new Error(`All thermal printing methods failed: ${error.message}, Raw: ${rawError.message}`);
+    }
+  }
 }
 
 /** ---------- ROUTES ---------- **/
@@ -794,29 +1238,123 @@ app.post("/api/campers/:id/print-receipt", auth(true), async (req, res) => {
     const file = path.join(RECEIPTS_DIR, fileName);
 
     const fee = getRegistrationFee();              // <-- dynamic fee
-    await generateReceiptPDF(
-      {
-        receiptNo,
-        invoiceNo,
-        fullName: camperName,
-        congregation: row.congregation,
-        amount: fee.toFixed(2),
-        datetime: row.paid_at || now(),
-      },
-      file
-    );
+    
+    // Try thermal printing first, fallback to PDF if thermal fails
+    const receiptData = {
+      receiptNo,
+      invoiceNo,
+      fullName: camperName,
+      congregation: row.congregation,
+      amount: fee.toFixed(2),
+      datetime: row.paid_at || now(),
+    };
 
-    await autoPrint(file);
+    let printMethod = 'thermal';
+    try {
+      // Attempt thermal printing
+      await printThermalReceipt(receiptData);
+      console.log('Receipt printed via thermal printer');
+    } catch (thermalError) {
+      console.warn('Thermal printing failed, falling back to PDF:', thermalError.message);
+      printMethod = 'PDF';
+      
+      // Fallback to PDF printing - always generate and auto-print
+      await generateReceiptPDF(receiptData, file);
+      try {
+        await autoPrint(file, process.env.THERMAL_PRINTER_NAME);
+        console.log('Receipt printed via PDF fallback - sent to default printer');
+      } catch (printError) {
+        console.warn('Auto-print failed, PDF saved for manual printing:', printError.message);
+      }
+    }
 
     res.json({
       ok: true,
       receiptNo,
       invoice_no: invoiceNo,
       file_name: fileName,
+      print_method: printMethod,
+      message: printMethod === 'thermal' ? 'Receipt sent to thermal printer' : 'Receipt sent to default printer (PDF)'
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false });
+  }
+});
+
+// Test thermal printer connection — requires login (any role)
+app.post("/api/test-thermal-printer", auth(true), async (req, res) => {
+  try {
+    console.log('Testing thermal printer connection...');
+
+    // Print test receipt
+    const testReceiptData = {
+      receiptNo: 'TEST-001',
+      invoiceNo: 'TEST-INV-001',
+      fullName: 'Test User',
+      congregation: 'Test Congregation',
+      amount: '100.00',
+      datetime: new Date().toISOString(),
+    };
+
+    await printThermalReceipt(testReceiptData);
+
+    res.json({
+      ok: true,
+      message: 'Test receipt sent to thermal printer! Check if it printed.',
+      method: 'Node thermal printer via Generic / Text Only interface',
+      interface: 'printer:Generic / Text Only'
+    });
+  } catch (e) {
+    console.error('Thermal printer test error:', e);
+    res.json({ 
+      ok: false, 
+      error: 'Thermal printing failed: ' + e.message,
+      help: 'Check if thermal printer is connected and recognized by Windows as Generic / Text Only printer.',
+      attempted_interface: 'printer:Generic / Text Only'
+    });
+  }
+});
+
+
+// Print thermal receipt directly — requires login (any role)
+app.post("/api/campers/:id/print-thermal", auth(true), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = db.prepare(`SELECT * FROM campers WHERE id=?`).get(id);
+    if (!row || !row.paid)
+      return res
+        .status(400)
+        .json({ ok: false, error: "Not paid or not found" });
+
+    const receiptNo = makeReceiptNo(id);
+    const invoiceNo = row.invoice_no || "";
+    const camperName = `${row.first_name || ""} ${row.last_name || ""}`.trim();
+    const fee = getRegistrationFee();
+
+    const receiptData = {
+      receiptNo,
+      invoiceNo,
+      fullName: camperName,
+      congregation: row.congregation,
+      amount: fee.toFixed(2),
+      datetime: row.paid_at || now(),
+    };
+
+    await printThermalReceipt(receiptData);
+
+    res.json({
+      ok: true,
+      receiptNo,
+      invoice_no: invoiceNo,
+      printed_method: 'thermal'
+    });
+  } catch (e) {
+    console.error('Thermal printing error:', e);
+    res.status(500).json({ 
+      ok: false, 
+      error: 'Thermal printing failed: ' + e.message 
+    });
   }
 });
 
@@ -940,7 +1478,7 @@ app.post("/api/print-camper-list", auth(true), async (req, res) => {
       stream.on("error", reject);
     });
 
-    await autoPrint(file);
+    await autoPrint(file, process.env.THERMAL_PRINTER_NAME);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

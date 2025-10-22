@@ -104,7 +104,8 @@ async function printFromPreview() {
       const j = await r.json().catch(() => ({}));
       if (j.ok) {
         closeReceiptPreview();
-        toastSuccess("Receipt sent to printer", "Success");
+        const message = j.message || "Receipt sent to printer";
+        toastSuccess(message, "Success");
       } else {
         toastError(j?.error || "Failed to print receipt", "Error");
       }
@@ -1063,98 +1064,102 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
 
           <div class="px-6 py-5">
             <div
-              class="rounded-xl border border-gray-200 bg-gray-50 p-8 sm:p-10 mb-6 flex flex-col text-[1.05rem] sm:text-sm"
+              class="rounded-xl border border-gray-200 bg-white p-8 sm:p-10 mb-6 flex flex-col text-sm font-mono"
+              style="font-family: 'Courier New', monospace;"
             >
-              <div class="flex items-center justify-center mb-5">
-                <img
-                  :src="headerLogoSrc"
-                  alt="Logo"
-                  class="h-10 w-auto"
-                  @error="onHeaderLogoError"
-                />
-              </div>
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-base sm:text-sm font-semibold text-gray-900">
-                    {{ branding.activityName }}
-                  </p>
-                  <p class="text-xs sm:text-[0.8rem] text-gray-500">
-                    {{ receiptSubtitle }}
-                  </p>
+              <!-- Header -->
+              <div class="text-center mb-4">
+                <div class="flex items-center justify-center mb-3">
+                  <img
+                    :src="headerLogoSrc"
+                    alt="Logo"
+                    class="h-10 w-auto"
+                    @error="onHeaderLogoError"
+                  />
                 </div>
-                <div
-                  class="rounded-full bg-indigo-600/10 px-3 py-1 text-sm font-semibold text-indigo-700"
-                >
-                  ₱{{ receipt.camper.amount }}
-                </div>
+                <div class="font-bold text-gray-900">CHURCH ACTIVITY</div>
+                <div class="font-bold text-gray-900 mb-2">PAYMENT RECEIPT</div>
               </div>
 
-              <div class="my-4 h-px bg-gray-200"></div>
+              <!-- Top Separator -->
+              <div class="border-t-2 border-gray-400 mb-3"></div>
 
-              <dl class="space-y-2 text-[1.05rem] sm:text-sm">
-                <div class="flex items-center justify-between">
-                  <dt class="text-gray-600">Date Issued</dt>
-                  <dd class="font-medium text-gray-900">
-                    {{
-                      receipt.camper.created_at
-                        ? new Date(receipt.camper.created_at).toLocaleString()
-                        : new Date().toLocaleString()
-                    }}
-                  </dd>
+              <!-- Date/Time and Receipt Numbers -->
+              <div class="mb-4 text-gray-800">
+                <div class="mb-1">
+                  Date/Time: {{
+                    receipt.camper.created_at
+                      ? new Date(receipt.camper.created_at).toLocaleString('en-US', { 
+                          month: '2-digit', 
+                          day: '2-digit', 
+                          year: 'numeric', 
+                          hour: '2-digit', 
+                          minute: '2-digit', 
+                          second: '2-digit',
+                          hour12: false 
+                        })
+                      : new Date().toLocaleString('en-US', { 
+                          month: '2-digit', 
+                          day: '2-digit', 
+                          year: 'numeric', 
+                          hour: '2-digit', 
+                          minute: '2-digit', 
+                          second: '2-digit',
+                          hour12: false 
+                        })
+                  }}
                 </div>
-                <div class="flex items-center justify-between">
-                  <dt class="text-gray-600">Invoice #</dt>
-                  <dd class="font-medium text-gray-900">
-                    {{ receipt.camper.invoice_no || "—" }}
-                  </dd>
-                </div>
-                <div class="flex items-center justify-between">
-                  <dt class="text-gray-600">{{ participantLabel }}</dt>
-                  <dd class="font-medium text-gray-900">
-                    {{ receipt.camper.first_name }}
-                    {{ receipt.camper.last_name }}
-                    <span
-                      v-if="receipt.camper.nickname"
-                      class="font-normal text-gray-500"
-                    >
-                      ({{ receipt.camper.nickname }})
-                    </span>
-                  </dd>
-                </div>
-                <div class="flex items-center justify-between">
-                  <dt class="text-gray-600">Congregation</dt>
-                  <dd class="font-medium text-gray-900">
-                    {{ receipt.camper.congregation || "-" }}
-                  </dd>
-                </div>
-                <div class="flex items-center justify-between">
-                  <dt class="text-gray-600">Paid</dt>
-                  <dd class="text-gray-900 font-medium">Yes</dd>
-                </div>
-              </dl>
+                <div>Invoice No: {{ receipt.camper.invoice_no || 'N/A' }}</div>
+              </div>
 
-              <div class="my-10 h-px bg-gray-200"></div>
+              <!-- Customer Information -->
+              <div class="mb-4">
+                <div class="font-bold text-gray-900 mb-2">CUSTOMER INFORMATION:</div>
+                <div class="text-gray-800">
+                  <div class="mb-1">
+                    Name: {{ receipt.camper.first_name }} {{ receipt.camper.last_name }}
+                  </div>
+                  <div>Congregation: {{ receipt.camper.congregation || '-' }}</div>
+                </div>
+              </div>
 
-              <div>
-                <h3 class="text-base sm:text-sm font-semibold text-gray-900">
-                  Data Privacy Notice
-                </h3>
-                <p
-                  class="mt-2 text-[1rem] sm:text-sm text-gray-600 leading-relaxed"
-                >
-                  By registering, you consent to the collection and processing
-                  of your personal information for the purpose of organizing
-                  this church activity. Your data will be used solely for
-                  registration management, communication regarding the event,
-                  and safety purposes during the activity.
-                </p>
-                <p
-                  class="mt-2 text-[1rem] sm:text-sm text-gray-600 leading-relaxed"
-                >
-                  We are committed to protecting your privacy and will not share
-                  your information with third parties without your consent,
-                  except as required by law or for emergency situations.
-                </p>
+              <!-- Payment Details -->
+              <div class="mb-3">
+                <div class="font-bold text-gray-900 mb-2">PAYMENT DETAILS:</div>
+                <div class="border-t border-dashed border-gray-400 mb-2"></div>
+                <div class="flex justify-between text-gray-800 mb-2">
+                  <span>Registration Fee</span>
+                  <span>PHP {{ parseFloat(receipt.camper.amount || 0).toFixed(2) }}</span>
+                </div>
+                <div class="border-t border-dashed border-gray-400 mb-2"></div>
+                <div class="flex justify-between text-gray-800 mb-1">
+                  <span>Total Amount Due</span>
+                  <span>PHP {{ parseFloat(receipt.camper.amount || 0).toFixed(2) }}</span>
+                </div>
+                <div class="flex justify-between text-gray-800 mb-1">
+                  <span>Amount Paid</span>
+                  <span>PHP {{ parseFloat(receipt.camper.amount || 0).toFixed(2) }}</span>
+                </div>
+              </div>
+
+              <!-- Bottom Separator -->
+              <div class="border-t-2 border-gray-400 my-3"></div>
+
+              <!-- Paid Status -->
+              <div class="text-center font-bold text-gray-900 mb-4">PAID IN FULL</div>
+
+              <!-- Footer Messages -->
+              <div class="text-center text-gray-700 space-y-2 mb-4">
+                <div>Thank you for your payment!</div>
+              </div>
+
+              <div class="text-center text-gray-700 space-y-1 mb-3">
+                <div>This serves as your official</div>
+                <div>receipt and proof of payment.</div>
+              </div>
+
+              <div class="text-center text-gray-700 mt-2">
+                Keep this receipt for your records
               </div>
             </div>
           </div>

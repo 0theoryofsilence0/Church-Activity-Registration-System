@@ -52,3 +52,4 @@ vite.config.ts.timestamp-*
 # OS
 ehthumbs.db
 Icon?
+backend/PRN

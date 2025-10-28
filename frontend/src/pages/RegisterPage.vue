@@ -634,98 +634,57 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
           <div class="px-6 py-5">
             <div
               class="rounded-xl border border-gray-200 bg-white p-8 sm:p-10 mb-6 flex flex-col text-sm font-mono"
-              style="font-family: 'Courier New', monospace;"
+              style="font-family: 'Courier New', monospace; white-space: pre-line;"
             >
-              <!-- Header -->
-              <div class="text-center mb-4">
-                <div class="flex items-center justify-center mb-3">
-                  <img
-                    :src="headerLogoSrc"
-                    alt="Logo"
-                    class="h-10 w-auto"
-                    @error="onHeaderLogoError"
-                  />
-                </div>
-                <div class="font-bold text-gray-900">CHURCH ACTIVITY</div>
-                <div class="font-bold text-gray-900 mb-2">PAYMENT RECEIPT</div>
+              <div class="text-center">
+                <div class="font-bold">        CHURCH ACTIVITY</div>
+                <div class="font-bold">      PAYMENT RECEIPT</div>
               </div>
-
-              <!-- Top Separator -->
-              <div class="border-t-2 border-gray-400 mb-3"></div>
-
-              <!-- Date/Time and Receipt Numbers -->
-              <div class="mb-4 text-gray-800">
-                <div class="mb-1">
-                  Date/Time: {{ receipt.camper.created_at ? new Date(receipt.camper.created_at).toLocaleString('en-US', { 
-                          month: '2-digit', 
-                          day: '2-digit', 
-                          year: 'numeric', 
-                          hour: '2-digit', 
-                          minute: '2-digit', 
-                          second: '2-digit',
-                          hour12: false 
-                        }) : new Date().toLocaleString('en-US', { 
-                          month: '2-digit', 
-                          day: '2-digit', 
-                          year: 'numeric', 
-                          hour: '2-digit', 
-                          minute: '2-digit', 
-                          second: '2-digit',
-                          hour12: false 
-                        }) }}
-                </div>
-                <div>Invoice No: {{ receipt.camper.invoice_no || 'N/A' }}</div>
-              </div>
-
-              <!-- Customer Information -->
-              <div class="mb-4">
-                <div class="font-bold text-gray-900 mb-2">CUSTOMER INFORMATION:</div>
-                <div class="text-gray-800">
-                  <div class="mb-1">
-                    Name: {{ receipt.camper.first_name }} {{ receipt.camper.last_name }}
-                  </div>
-                  <div>Congregation: {{ receipt.camper.congregation || '-' }}</div>
-                </div>
-              </div>
-
-              <!-- Payment Details -->
-              <div class="mb-3">
-                <div class="font-bold text-gray-900 mb-2">PAYMENT DETAILS:</div>
-                <div class="border-t border-dashed border-gray-400 mb-2"></div>
-                <div class="flex justify-between text-gray-800 mb-2">
-                  <span>Registration Fee</span>
-                  <span>PHP {{ parseFloat(receipt.camper.amount || 0).toFixed(2) }}</span>
-                </div>
-                <div class="border-t border-dashed border-gray-400 mb-2"></div>
-                <div class="flex justify-between text-gray-800 mb-1">
-                  <span>Total Amount Due</span>
-                  <span>PHP {{ parseFloat(receipt.camper.amount || 0).toFixed(2) }}</span>
-                </div>
-                <div class="flex justify-between text-gray-800 mb-1">
-                  <span>Amount Paid</span>
-                  <span>PHP {{ parseFloat(receipt.camper.amount || 0).toFixed(2) }}</span>
-                </div>
-              </div>
-
-              <!-- Bottom Separator -->
-              <div class="border-t-2 border-gray-400 my-3"></div>
-
-              <!-- Paid Status -->
-              <div class="text-center font-bold text-gray-900 mb-4">PAID IN FULL</div>
-
-              <!-- Footer Messages -->
-              <div class="text-center text-gray-700 space-y-2 mb-4">
-                <div>Thank you for your payment!</div>
-              </div>
-
-              <div class="text-center text-gray-700 space-y-1 mb-3">
-                <div>This serves as your official</div>
-                <div>receipt and proof of payment.</div>
-              </div>
-
-              <div class="text-center text-gray-700 mt-2">
-                Keep this receipt for your records
-              </div>
+              
+              <div class="my-2">================================</div>
+              
+              <div>Date/Time: {{ receipt.camper.created_at ? new Date(receipt.camper.created_at).toLocaleString('en-PH', { 
+                      day: '2-digit',
+                      month: '2-digit', 
+                      year: 'numeric', 
+                      hour: '2-digit', 
+                      minute: '2-digit', 
+                      second: '2-digit',
+                      hour12: false 
+                    }) : new Date().toLocaleString('en-PH', { 
+                      day: '2-digit',
+                      month: '2-digit', 
+                      year: 'numeric', 
+                      hour: '2-digit', 
+                      minute: '2-digit', 
+                      second: '2-digit',
+                      hour12: false 
+                    }) }}</div>
+              <div>Receipt No: YC-{{ new Date().toISOString().slice(0,10).replace(/-/g,'') }}-{{ String(receipt.camper.id || '001').padStart(3, '0') }}</div>
+              <div>Invoice No: {{ receipt.camper.invoice_no || 'N/A' }}</div>
+              
+              <div class="my-2">CUSTOMER INFORMATION:</div>
+              <div>Name: {{ receipt.camper.first_name }} {{ receipt.camper.last_name }}</div>
+              <div>Congregation: {{ receipt.camper.congregation || 'N/A' }}</div>
+              
+              <div class="my-2">PAYMENT DETAILS:</div>
+              <div>--------------------------------</div>
+              <div>Registration Fee     PHP {{ parseFloat(receipt.camper.amount || 0).toFixed(2) }}</div>
+              <div>--------------------------------</div>
+              <div>Total Amount Due     PHP {{ parseFloat(receipt.camper.amount || 0).toFixed(2) }}</div>
+              <div>Amount Paid          PHP {{ parseFloat(receipt.camper.amount || 0).toFixed(2) }}</div>
+              <div>Change               PHP   0.00</div>
+              <div>================================</div>
+              
+              <div class="text-center font-bold my-2">      PAID IN FULL</div>
+              
+              <div class="text-center">Thank you for your payment!</div>
+              <div class="text-center">See you at the event!</div>
+              
+              <div class="text-center mt-2">This serves as your official</div>
+              <div class="text-center">receipt and proof of payment.</div>
+              
+              <div class="text-center mt-2">Keep this receipt for your records</div>
             </div>
           </div>
 

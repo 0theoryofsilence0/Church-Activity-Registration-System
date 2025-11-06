@@ -396,7 +396,7 @@ function doGenerate(N: number) {
   // Use pure generator
   const nonLeaders = attendeesPool.value.slice();
   // use strict parity to balance gender and age
-  const gen = generateTeams(nonLeaders, N, { parity: 'strict' });
+  const gen = generateTeams(nonLeaders, N, { parity: 'strict', algo: 'greedy' });
 
   // Create Team objects
   teams.value = gen.map((members, i) => ({
@@ -427,53 +427,81 @@ function stripAssignedFromPools(teamsList: Team[]) {
 function reconcileTeamsAfterRefresh() {
   // If there are no teams, nothing to do
   if (!teams.value.length) return;
-
+  // New behavior:
+  // - Keep teams intact (retain all current members, including leaders)
+  // - Do NOT remove leaders from teams
+  // - Only assign unassigned non-leader attendees (new records) into existing teams
+  //   to balance sizes. Teams are retained; we only fill slots up to target sizes.
   let redistributed = 0;
   const touchedTeams = new Set<string>();
 
-  let i = 0;
-  while (attendeesPool.value.length) {
-    const mem = attendeesPool.value.shift();
-    if (!mem) break;
-    const already = teams.value.some((t) =>
-      t.members.some((m) => m.id === mem.id)
-    );
-    if (already) continue;
-    const t = teams.value[i % teams.value.length];
-    t.members.push(mem);
+  // Build sets of currently assigned IDs (leaders + non-leaders stay)
+  const assignedIds = new Set(teams.value.flatMap((t) => (t.members || []).map((m) => m.id)));
+
+  // Identify unassigned non-leader attendees from the pool
+  const unassigned = attendeesPool.value.filter((a) => !a.is_leader && !assignedIds.has(a.id));
+
+  // Determine how many non-leaders should be in each team (target sizes)
+  const currentNonLeaderCounts = teams.value.map((t) => (t.members || []).filter((m) => !m.is_leader).length);
+  const totalNonLeaders = currentNonLeaderCounts.reduce((s, v) => s + v, 0) + unassigned.length;
+  const teamCount = teams.value.length;
+  const baseSize = Math.floor(totalNonLeaders / teamCount);
+  const teamsWithExtra = totalNonLeaders % teamCount;
+  const targetSizes = Array.from({ length: teamCount }, (_, i) => (i < teamsWithExtra ? baseSize + 1 : baseSize));
+
+  // Track totals (include leaders ages so age-priority accounts for leaders) and current sizes
+  const totals = teams.value.map((t) => (t.members || []).reduce((s: number, m: any) => s + (m.age || 0), 0));
+  const sizes = teams.value.map((t) => (t.members || []).length);
+  const counts = teams.value.map((t) => {
+    const c = { m: 0, f: 0, o: 0 };
+    (t.members || []).forEach((m: any) => {
+      if (m.gender === 'Male') c.m++; else if (m.gender === 'Female') c.f++; else c.o++;
+    });
+    return c;
+  });
+
+  // Sort unassigned by age (oldest first) because age is top priority
+  unassigned.sort((a, b) => (b.age || 0) - (a.age || 0));
+
+  // Assign each unassigned person to the team that has available non-leader slot and
+  // minimizes (new total age, gender-penalty) lexicographically.
+  for (const person of unassigned) {
+    let bestIdx = -1;
+    let bestTotal = Infinity;
+    let bestPenalty = Infinity;
+    for (let i = 0; i < teamCount; i++) {
+      // available slots compare non-leader counts
+      const nonLeaderCount = (teams.value[i].members || []).filter((m: any) => !m.is_leader).length;
+      if (nonLeaderCount < targetSizes[i]) {
+        const newTotal = totals[i] + (person.age || 0);
+        // compute overall gender penalty if placed here
+        const c = counts[i];
+        const cm = c.m + (person.gender === 'Male' ? 1 : 0);
+        const cf = c.f + (person.gender === 'Female' ? 1 : 0);
+        const overallPenalty = counts.reduce((s, x, idx) => {
+          if (idx === i) return s + Math.abs(cm - cf);
+          return s + Math.abs(x.m - x.f);
+        }, 0);
+
+        if (newTotal < bestTotal || (newTotal === bestTotal && overallPenalty < bestPenalty)) {
+          bestTotal = newTotal;
+          bestPenalty = overallPenalty;
+          bestIdx = i;
+        }
+      }
+    }
+    if (bestIdx === -1) break; // no available slot
+    teams.value[bestIdx].members.push(person);
+    totals[bestIdx] += (person.age || 0);
+    sizes[bestIdx]++;
+    if (person.gender === 'Male') counts[bestIdx].m++; else if (person.gender === 'Female') counts[bestIdx].f++; else counts[bestIdx].o++;
     redistributed++;
-    touchedTeams.add(t.id);
-    i++;
+    touchedTeams.add(teams.value[bestIdx].id);
   }
 
-  // Instead of naive round-robin above, prefer strict parity redistribution by
-  // rebuilding non-leader teams from the full attendee pool so genders/ages are balanced.
-  try {
-    const teamCount = teams.value.length;
-    // collect all non-leader attendees from pools + current teams
-    const allNonLeaders = [
-      ...attendeesPool.value.filter(a => !a.is_leader),
-      ...teams.value.flatMap(t => (t.members || []).filter(m => !m.is_leader)),
-    ];
-    // generate balanced teams with strict parity
-    const rebuilt = generateTeams(allNonLeaders, teamCount, { parity: 'strict' });
-    // map rebuilt arrays back into team objects, preserving names/ids when possible
-    const oldNames = teams.value.map(t => ({ id: t.id, name: t.name }));
-    teams.value = rebuilt.map((members, idx) => ({
-      id: oldNames[idx]?.id || `t${idx+1}`,
-      name: oldNames[idx]?.name || `Team ${idx+1}`,
-      members,
-    }));
-    // clear pools and then remove assigned members from newly built teams
-    attendeesPool.value = [];
-    stripAssignedFromPools(teams.value);
-    redistributed = teams.value.flatMap(t => t.members).length;
-    touchedTeams.clear();
-    teams.value.forEach(t => touchedTeams.add(t.id));
-  } catch (e) {
-    // if something goes wrong, fall back to previous behavior (already applied above)
-    console.error('Failed to rebuild teams with strict parity', e);
-  }
+  // Remove newly assigned attendees from attendeesPool
+  const nowAssigned = new Set(teams.value.flatMap((t) => (t.members || []).map((m) => m.id)));
+  attendeesPool.value = attendeesPool.value.filter((a) => !nowAssigned.has(a.id));
 
   reconcileInfo.value = {
     redistributed,
@@ -492,9 +520,9 @@ function reconcileTeamsAfterRefresh() {
     });
   } else {
     pushToast({
-      type: "error",
+      type: "info",
       title: "Redistributed",
-      message: `Nothing to Redistributed`,
+      message: `No unassigned attendees to redistribute`,
     });
   }
 
@@ -980,7 +1008,10 @@ function exportTeams() {
                         {{ (m.first_name || "").charAt(0)
                         }}{{ (m.last_name || "").charAt(0) }}
                       </div>
-                      <div class="font-medium capitalize">{{ m.first_name }} {{ m.last_name }}</div>
+                      <div class="font-medium capitalize flex items-center gap-2">
+                        <span>{{ m.first_name }} {{ m.last_name }}</span>
+                        <span v-if="m.is_leader" class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">Leader</span>
+                      </div>
                     </div>
                   </td>
                   <td class="py-3 capitalize">{{ m.congregation }}</td>

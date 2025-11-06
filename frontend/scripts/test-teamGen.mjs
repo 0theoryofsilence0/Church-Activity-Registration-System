@@ -12,7 +12,7 @@ function makeAttendees(nMale=6, nFemale=8, nOther=1) {
 function approxEqual(a,b,eps=2) { return Math.abs(a-b) <= eps; }
 
 const nonLeaders = makeAttendees(6,8,1);
-const teams = generateTeams(nonLeaders, 3);
+const teams = generateTeams(nonLeaders, 3, { parity: 'strict', algo: 'greedy' });
 console.log('Team sizes:', teams.map(t=>t.length));
 const stats = statsForTeams(teams);
 console.log('Avg ages:', stats.map(s=>s.avgAge));
@@ -29,8 +29,8 @@ if (!approxEqual(maxAvg,minAvg,2.5)) {
 console.log('Basic checks passed');
 
 // Also run strict parity and show results
-const teamsStrict = generateTeams(nonLeaders, 3, { parity: 'strict' });
-console.log('\nStrict parity: sizes', teamsStrict.map(t=>t.length));
+const teamsStrict = generateTeams(nonLeaders, 3, { parity: 'strict', algo: 'greedy' });
+console.log('\nStrict parity (greedy): sizes', teamsStrict.map(t=>t.length));
 const statsS = statsForTeams(teamsStrict);
 console.log('Strict avg ages:', statsS.map(s=>s.avgAge));
 console.log('Strict genders per team:', statsS.map(s=>s.genders));

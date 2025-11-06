@@ -1368,6 +1368,12 @@ app.post("/api/admin/reset-database", auth(true), requireSuper, (req, res) => {
     // Broadcast event to notify connected clients
     broadcastEvent('database:reset', { deletedCount: deleteInfo.changes });
     
+    // Clear persisted teams_state directly via SQL (we expect this key to exist)
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'teams_state'").get();
+    db.prepare("UPDATE settings SET value = '' WHERE key = 'teams_state'").run();
+    broadcastEvent('teams:cleared', {});
+    console.log('Cleared teams_state setting via SQL');
+    
     res.json({ 
       ok: true, 
       deletedCount: deleteInfo.changes,
@@ -1421,4 +1427,35 @@ app.get('/api/events', auth(false), (req, res) => {
   req.on('close', () => {
     sseClients.delete(res);
   });
+});
+
+// Non-destructive preview of what the reset will remove — SUPER ONLY
+app.get('/api/admin/reset-preview', auth(true), requireSuper, (req, res) => {
+  try {
+    // DB counts
+    const campersRow = db.prepare("SELECT COUNT(*) AS n FROM campers").get();
+    const campersCount = campersRow ? campersRow.n : 0;
+    const sessionsRow = db.prepare("SELECT COUNT(*) AS n FROM sessions").get();
+    const sessionsCount = sessionsRow ? sessionsRow.n : 0;
+
+    // settings value for teams_state
+    const teamsState = getSetting('teams_state') || '';
+
+    // Files in receipts and uploads
+    const receiptsFiles = fs.existsSync(RECEIPTS_DIR) ? fs.readdirSync(RECEIPTS_DIR).filter(f => f) : [];
+    const uploadsFiles = fs.existsSync(UPLOADS_DIR) ? fs.readdirSync(UPLOADS_DIR).filter(f => f) : [];
+
+    res.json({
+      ok: true,
+      campersCount,
+      sessionsCount,
+      teamsStatePresent: !!teamsState,
+      teamsStatePreview: teamsState ? (teamsState.length > 1000 ? teamsState.substring(0, 1000) + '...' : teamsState) : null,
+      receipts: { count: receiptsFiles.length, sample: receiptsFiles.slice(0, 20) },
+      uploads: { count: uploadsFiles.length, sample: uploadsFiles.slice(0, 20) }
+    });
+  } catch (e) {
+    console.error('Reset preview failed:', e);
+    res.status(500).json({ ok: false, error: 'Reset preview failed' });
+  }
 });

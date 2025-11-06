@@ -26,7 +26,7 @@ function fullName(a) {
  * @param {number} teamCount
  * @returns {Array<Array<Attendee>>}
  */
-export function generateTeams(nonLeaders, teamCount, opts = { parity: 'strict' }) {
+export function generateTeams(nonLeaders, teamCount, opts = { parity: 'strict', algo: 'snake' }) {
   const N = Math.max(0, Math.floor(teamCount));
   const teams = Array.from({length: N}, () => []);
   if (N === 0) return teams;
@@ -65,10 +65,55 @@ export function generateTeams(nonLeaders, teamCount, opts = { parity: 'strict' }
 
   // 2) Sort each pool by age (young → old)
   // 3) Snake distribute each gender pool across teams
-  ['Male', 'Female', 'Other'].forEach(gender => {
-    const pool = genderPools[gender].slice().sort((a, b) => (a.age || 0) - (b.age || 0));
-    snakeDistribute(pool, teams);
-  });
+  if (opts.algo === 'snake') {
+    ['Male', 'Female', 'Other'].forEach(gender => {
+      const pool = genderPools[gender].slice().sort((a, b) => (a.age || 0) - (b.age || 0));
+      snakeDistribute(pool, teams);
+    });
+  } else if (opts.algo === 'greedy') {
+    // Greedy algorithm that balances total age across teams while respecting team sizes.
+    // Flatten all attendees, sort by age descending (oldest first), then assign each
+    // person to the team with the lowest total age so far (and not full). This minimizes
+    // age variance between teams. Note: gender parity will be best-effort here.
+    const all = [].concat(...Object.values(genderPools));
+    all.sort((a, b) => (b.age || 0) - (a.age || 0));
+    // compute target sizes
+    const total = all.length;
+    const targetSize = Math.floor(total / N);
+    const teamsWithExtra = total % N;
+    const targetSizes = Array.from({length: N}, (_, i) => i < teamsWithExtra ? targetSize + 1 : targetSize);
+
+    // track team totals
+    const totals = Array.from({length: N}, () => 0);
+    const sizes = Array.from({length: N}, () => 0);
+
+    for (const person of all) {
+      // find candidate teams with available slot
+      let bestIdx = -1;
+      let bestTotal = Infinity;
+      for (let i = 0; i < N; i++) {
+        if (sizes[i] < targetSizes[i]) {
+          if (totals[i] < bestTotal) {
+            bestTotal = totals[i];
+            bestIdx = i;
+          }
+        }
+      }
+      if (bestIdx === -1) {
+        // fallback: find any team (shouldn't happen)
+        bestIdx = 0;
+      }
+      teams[bestIdx].push(person);
+      totals[bestIdx] += (person.age || 0);
+      sizes[bestIdx]++;
+    }
+  } else {
+    // unknown algo: default to snake
+    ['Male', 'Female', 'Other'].forEach(gender => {
+      const pool = genderPools[gender].slice().sort((a, b) => (a.age || 0) - (b.age || 0));
+      snakeDistribute(pool, teams);
+    });
+  }
 
   // 4) Rebalance team sizes so difference between any teams is at most 1
   const total = teams.reduce((sum, team) => sum + team.length, 0);

@@ -139,7 +139,7 @@ function resetDatabase() {
   resetModal.value = {
     open: true,
     step: 1,
-    title: "⚠️ DANGER: Reset Database",
+    title: "DANGER: Reset Database",
     message: "This will permanently delete ALL camper registrations and cannot be undone. Are you absolutely sure you want to continue?",
     onConfirm: showFinalWarning
   };
@@ -149,7 +149,7 @@ function showFinalWarning() {
   resetModal.value = {
     open: true,
     step: 2,
-    title: "🚨 FINAL WARNING",
+    title: "FINAL WARNING",
     message: "This is your LAST CHANCE to cancel. All registration data will be permanently lost and cannot be recovered. This action is irreversible.",
     onConfirm: executeReset
   };
@@ -313,7 +313,7 @@ async function testThermalPrinter() {
       <!-- Danger Zone -->
       <div class="pt-6 border-t border-red-200">
         <h2 class="text-lg font-medium mb-2 text-red-700">Danger Zone</h2>
-        <p class="text-sm text-red-600 mb-4">⚠️ These actions are irreversible and will permanently delete data.</p>
+        <p class="text-sm text-red-600 mb-4">These actions are irreversible and will permanently delete data.</p>
         
         <button
           @click="resetDatabase"

@@ -262,6 +262,30 @@ ON campers (
 );
 `);
 
+// Archived campers table: store deleted records separately so main table stays small
+db.exec(`
+CREATE TABLE IF NOT EXISTS archived_campers (
+  archived_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  original_id INTEGER,
+  first_name    TEXT NOT NULL,
+  last_name     TEXT NOT NULL,
+  nickname      TEXT NOT NULL,
+  age           INTEGER,
+  congregation TEXT,
+  gender        TEXT,
+  is_leader     INTEGER DEFAULT 0,
+  is_baptized   INTEGER DEFAULT 0,
+  is_guardian   INTEGER DEFAULT 0,
+  paid          INTEGER DEFAULT 0,
+  sports        VARCHAR(250),
+  additional_info VARCHAR(250),
+  invoice_no    TEXT,
+  created_at    TEXT,
+  paid_at       TEXT,
+  archived_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+`);
+
 // --- SETTINGS TABLE + HELPERS ---
 db.prepare(`
   CREATE TABLE IF NOT EXISTS settings (
@@ -325,6 +349,11 @@ try {
   const hasInvoice = cols.some((c) => c.name === "invoice_no");
   if (!hasInvoice) {
     db.exec(`ALTER TABLE campers ADD COLUMN invoice_no TEXT;`);
+  }
+  // add deleted column for soft-deletes if missing
+  const hasDeleted = cols.some((c) => c.name === "deleted");
+  if (!hasDeleted) {
+    db.exec(`ALTER TABLE campers ADD COLUMN deleted INTEGER DEFAULT 0;`);
   }
 } catch (e) {
   // ignore
@@ -912,8 +941,68 @@ app.put("/api/campers/:id", auth(true), (req, res) => {
 // List with filters — requires login (any role)
 app.get("/api/campers", auth(true), (req, res) => {
   try {
-    const { congregation, gender, age, is_leader, is_baptized, is_guardian } = req.query;
+    const { congregation, gender, age, is_leader, is_baptized, is_guardian, deleted } = req.query;
 
+    // If caller asked for archived rows, return from archived_campers
+    if (deleted && (deleted === "1" || deleted === "true")) {
+      let sql = `SELECT * FROM archived_campers WHERE 1=1`;
+      const params = {};
+      if (congregation && congregation !== "All") {
+        sql += ` AND congregation=@congregation`;
+        params.congregation = congregation;
+      }
+      if (gender && gender !== "All") {
+        sql += ` AND gender=@gender`;
+        params.gender = gender;
+      }
+      if (age && age !== "All") {
+        sql += ` AND age=@age`;
+        params.age = Number(age);
+      }
+      if (is_leader && is_leader !== "All") {
+        sql += ` AND is_leader=@is_leader`;
+        params.is_leader = Number(is_leader);
+      }
+      if (is_baptized && is_baptized !== "All") {
+        sql += ` AND is_baptized=@is_baptized`;
+        params.is_baptized = Number(is_baptized);
+      }
+      if (is_guardian && is_guardian !== "All") {
+        sql += ` AND is_guardian=@is_guardian`;
+        params.is_guardian = Number(is_guardian);
+      }
+      sql += ` ORDER BY archived_at DESC`;
+
+      const fee = getRegistrationFee();
+      const rows = db
+        .prepare(sql)
+        .all(params)
+        .map((r) => ({
+          // normalize field names so frontend can reuse same table layout
+          id: r.archived_id,
+          original_id: r.original_id,
+          first_name: r.first_name,
+          last_name: r.last_name,
+          nickname: r.nickname,
+          age: r.age,
+          congregation: r.congregation,
+          gender: r.gender,
+          is_leader: r.is_leader,
+          is_baptized: r.is_baptized,
+          is_guardian: r.is_guardian,
+          paid: r.paid,
+          sports: r.sports,
+          additional_info: r.additional_info,
+          invoice_no: r.invoice_no,
+          created_at: r.created_at,
+          paid_at: r.paid_at,
+          archived_at: r.archived_at,
+          amount: fee.toFixed(2),
+        }));
+      return res.json({ ok: true, rows });
+    }
+
+    // Default: return active campers from main table
     let sql = `SELECT * FROM campers WHERE 1=1`;
     const params = {};
     if (congregation && congregation !== "All") {
@@ -942,7 +1031,7 @@ app.get("/api/campers", auth(true), (req, res) => {
     }
     sql += ` ORDER BY created_at DESC`;
 
-    const fee = getRegistrationFee();              // <-- dynamic fee
+    const fee = getRegistrationFee();
     const rows = db
       .prepare(sql)
       .all(params)
@@ -1337,16 +1426,106 @@ app.post('/api/settings/logo', auth(true), requireSuper, upload.single('file'), 
 });
 
 // Delete a camper — SUPER ONLY
+// Soft-delete a camper (mark deleted=1) — SUPER ONLY
+// Archive a camper: copy row into archived_campers and remove from campers
 app.delete("/api/campers/:id", auth(true), requireSuper, (req, res) => {
   try {
     const id = Number(req.params.id);
-    const info = db.prepare("DELETE FROM campers WHERE id = ?").run(id);
-    if (info.changes === 0)
-      return res.status(404).json({ ok: false, message: "Not found" });
-    res.json({ ok: true });
+    const row = db.prepare("SELECT * FROM campers WHERE id = ?").get(id);
+    if (!row) return res.status(404).json({ ok: false, message: "Not found" });
+
+    const insert = db.prepare(`
+      INSERT INTO archived_campers (
+        original_id, first_name, last_name, nickname, age, congregation, gender,
+        is_leader, is_baptized, is_guardian, paid, sports, additional_info, invoice_no, created_at, paid_at, archived_at
+      ) VALUES (
+        @original_id, @first_name, @last_name, @nickname, @age, @congregation, @gender,
+        @is_leader, @is_baptized, @is_guardian, @paid, @sports, @additional_info, @invoice_no, @created_at, @paid_at, @archived_at
+      )
+    `);
+
+    const info = insert.run({
+      original_id: id,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      nickname: row.nickname,
+      age: row.age,
+      congregation: row.congregation,
+      gender: row.gender,
+      is_leader: row.is_leader,
+      is_baptized: row.is_baptized,
+      is_guardian: row.is_guardian,
+      paid: row.paid,
+      sports: row.sports,
+      additional_info: row.additional_info,
+      invoice_no: row.invoice_no,
+      created_at: row.created_at,
+      paid_at: row.paid_at,
+      archived_at: now(),
+    });
+
+    // Delete from main table
+    db.prepare("DELETE FROM campers WHERE id = ?").run(id);
+
+    // broadcast deletion event for clients to refresh (include archived_id and original id)
+    broadcastEvent('campers:deleted', { archived_id: info.lastInsertRowid, original_id: id });
+    res.json({ ok: true, archived_id: info.lastInsertRowid });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false, message: "Failed to delete" });
+    res.status(500).json({ ok: false, message: "Failed to archive camper" });
+  }
+});
+
+// Restore a soft-deleted camper — SUPER ONLY
+// Restore an archived camper. :id may be archived_id or original_id
+app.post("/api/campers/:id/restore", auth(true), requireSuper, (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    // Try to find by archived_id first
+    let arch = db.prepare("SELECT * FROM archived_campers WHERE archived_id = ?").get(id);
+    if (!arch) {
+      // fallback: find by original_id
+      arch = db.prepare("SELECT * FROM archived_campers WHERE original_id = ?").get(id);
+    }
+    if (!arch) return res.status(404).json({ ok: false, message: "Not found in archive" });
+
+    const insert = db.prepare(`
+      INSERT INTO campers (
+        first_name, last_name, nickname, age, congregation, gender,
+        is_leader, is_baptized, is_guardian, paid, sports, additional_info, invoice_no, created_at, paid_at
+      ) VALUES (
+        @first_name, @last_name, @nickname, @age, @congregation, @gender,
+        @is_leader, @is_baptized, @is_guardian, @paid, @sports, @additional_info, @invoice_no, @created_at, @paid_at
+      )
+    `);
+
+    const info = insert.run({
+      first_name: arch.first_name,
+      last_name: arch.last_name,
+      nickname: arch.nickname,
+      age: arch.age,
+      congregation: arch.congregation,
+      gender: arch.gender,
+      is_leader: arch.is_leader,
+      is_baptized: arch.is_baptized,
+      is_guardian: arch.is_guardian,
+      paid: arch.paid,
+      sports: arch.sports,
+      additional_info: arch.additional_info,
+      invoice_no: arch.invoice_no,
+      created_at: arch.created_at,
+      paid_at: arch.paid_at,
+    });
+
+    // Remove from archive
+    db.prepare("DELETE FROM archived_campers WHERE archived_id = ?").run(arch.archived_id);
+
+    // notify clients a camper was restored
+    broadcastEvent('campers:restored', { id: info.lastInsertRowid, original_id: arch.original_id });
+    res.json({ ok: true, id: info.lastInsertRowid });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, message: "Failed to restore" });
   }
 });
 
@@ -1362,6 +1541,9 @@ app.post("/api/admin/reset-database", auth(true), requireSuper, (req, res) => {
     
     // Reset the auto-increment counter
     db.prepare("DELETE FROM sqlite_sequence WHERE name = 'campers'").run();
+  // Also clear archived campers
+  const delArchived = db.prepare("DELETE FROM archived_campers").run();
+  db.prepare("DELETE FROM sqlite_sequence WHERE name = 'archived_campers'").run();
     
     console.log(`Database reset: ${deleteInfo.changes} campers deleted`);
     
@@ -1377,7 +1559,8 @@ app.post("/api/admin/reset-database", auth(true), requireSuper, (req, res) => {
     res.json({ 
       ok: true, 
       deletedCount: deleteInfo.changes,
-      message: `Database reset complete. ${deleteInfo.changes} records deleted.`
+      archivedDeleted: delArchived.changes,
+      message: `Database reset complete. ${deleteInfo.changes} records deleted; ${delArchived.changes} archived records deleted.`
     });
   } catch (e) {
     console.error("Failed to reset database:", e);
@@ -1437,6 +1620,8 @@ app.get('/api/admin/reset-preview', auth(true), requireSuper, (req, res) => {
     const campersCount = campersRow ? campersRow.n : 0;
     const sessionsRow = db.prepare("SELECT COUNT(*) AS n FROM sessions").get();
     const sessionsCount = sessionsRow ? sessionsRow.n : 0;
+    const archivedRow = db.prepare("SELECT COUNT(*) AS n FROM archived_campers").get();
+    const archivedCount = archivedRow ? archivedRow.n : 0;
 
     // settings value for teams_state
     const teamsState = getSetting('teams_state') || '';
@@ -1448,6 +1633,7 @@ app.get('/api/admin/reset-preview', auth(true), requireSuper, (req, res) => {
     res.json({
       ok: true,
       campersCount,
+      archivedCount,
       sessionsCount,
       teamsStatePresent: !!teamsState,
       teamsStatePreview: teamsState ? (teamsState.length > 1000 ? teamsState.substring(0, 1000) + '...' : teamsState) : null,

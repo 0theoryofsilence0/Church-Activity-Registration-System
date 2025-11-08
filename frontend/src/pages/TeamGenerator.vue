@@ -24,12 +24,15 @@ type Attendee = {
   gender: Gender;
   age: number;
   is_leader: boolean;
+  is_guardian?: boolean;
 };
 type Team = { id: string; name: string; members: Attendee[] };
 
 // Live populations (fetched from backend)
 const attendeesPool = ref<Attendee[]>([]);
 const leadersPool = ref<Attendee[]>([]);
+// Guardians are treated specially and excluded from groupings
+const guardiansPool = ref<Attendee[]>([]);
 const teams = ref<Team[]>([]);
 const isLoading = ref(false);
 const preferredTeamCount = ref<number>(3);
@@ -149,9 +152,13 @@ async function loadTeamsFromServerHandler() {
         // return current team members to pools (avoid duplicates)
         const allMembers = teams.value.flatMap((t) => t.members);
         allMembers.forEach((m) => {
+          // Leaders take precedence over guardians: if a member is both, treat them as a leader
           if (m.is_leader) {
             if (!leadersPool.value.some((x) => x.id === m.id))
               leadersPool.value.push(m);
+          } else if (m.is_guardian) {
+            if (!guardiansPool.value.some((x) => x.id === m.id))
+              guardiansPool.value.push(m);
           } else {
             if (!attendeesPool.value.some((x) => x.id === m.id))
               attendeesPool.value.push(m);
@@ -204,9 +211,13 @@ async function loadTeamsFromServerSilent() {
     // return current team members to pools (avoid duplicates)
     const allMembers = teams.value.flatMap((t) => t.members);
     allMembers.forEach((m) => {
+      // Leaders take precedence over guardians: if a member is both, treat them as a leader
       if (m.is_leader) {
         if (!leadersPool.value.some((x) => x.id === m.id))
           leadersPool.value.push(m);
+      } else if (m.is_guardian) {
+        if (!guardiansPool.value.some((x) => x.id === m.id))
+          guardiansPool.value.push(m);
       } else {
         if (!attendeesPool.value.some((x) => x.id === m.id))
           attendeesPool.value.push(m);
@@ -407,11 +418,17 @@ async function fetchAttendees() {
     }
     const data = await r.json().catch(() => ({}));
     const rows = data?.rows || [];
+    // guardians are excluded from groupings and kept in their own pool
     attendeesPool.value = rows
-      .filter((a: any) => !a.is_leader)
+      .filter((a: any) => !a.is_leader && !a.is_guardian)
       .map((a: any) => ({ ...a }));
+    // Leaders take precedence — if someone is both leader and guardian,
+    // show them with leaders rather than in guardians
     leadersPool.value = rows
       .filter((a: any) => a.is_leader)
+      .map((a: any) => ({ ...a }));
+    guardiansPool.value = rows
+      .filter((a: any) => a.is_guardian && !a.is_leader)
       .map((a: any) => ({ ...a }));
   } catch (e) {
     console.error("Failed to fetch campers", e);
@@ -438,9 +455,13 @@ async function generate() {
           // return everyone (avoid duplicates)
           const allMembers = teams.value.flatMap((t) => t.members);
           allMembers.forEach((m) => {
+            // Leaders take precedence over guardians
             if (m.is_leader) {
               if (!leadersPool.value.some((x) => x.id === m.id))
                 leadersPool.value.push(m);
+            } else if (m.is_guardian) {
+              if (!guardiansPool.value.some((x) => x.id === m.id))
+                guardiansPool.value.push(m);
             } else {
               if (!attendeesPool.value.some((x) => x.id === m.id))
                 attendeesPool.value.push(m);
@@ -490,6 +511,7 @@ function stripAssignedFromPools(teamsList: Team[]) {
   );
   attendeesPool.value = attendeesPool.value.filter((a) => !assigned.has(a.id));
   leadersPool.value = leadersPool.value.filter((l) => !assigned.has(l.id));
+  guardiansPool.value = guardiansPool.value.filter((g) => !assigned.has(g.id));
 }
 
 function reconcileTeamsAfterRefresh() {
@@ -716,6 +738,8 @@ let _hoverPending: {
 
 // Rejection flash state: mark member rows to flash when an invalid drop occurs
 const rejectFlash = ref<Record<string, boolean>>({});
+// Team-level rejection flash (e.g., dropping a guardian onto a team)
+const teamRejects = ref<Record<string, boolean>>({});
 
 function flashReject(memberId: string, duration = 600) {
   try {
@@ -723,6 +747,19 @@ function flashReject(memberId: string, duration = 600) {
     window.setTimeout(() => {
       try {
         delete rejectFlash.value[memberId];
+      } catch (e) {}
+    }, duration);
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function flashRejectTeam(teamId: string, duration = 600) {
+  try {
+    teamRejects.value[teamId] = true;
+    window.setTimeout(() => {
+      try {
+        delete teamRejects.value[teamId];
       } catch (e) {}
     }, duration);
   } catch (e) {
@@ -759,6 +796,9 @@ function removeMemberFromTeam(teamId: string, memberId: string) {
   if (m.is_leader) {
     if (!leadersPool.value.some((x) => x.id === m.id))
       leadersPool.value.push(m);
+  } else if (m.is_guardian) {
+    if (!guardiansPool.value.some((x) => x.id === m.id))
+      guardiansPool.value.push(m);
   } else {
     if (!attendeesPool.value.some((x) => x.id === m.id))
       attendeesPool.value.push(m);
@@ -849,6 +889,10 @@ async function onDropToTeam(e: DragEvent, teamId: string) {
     if (!member) {
       const ai = attendeesPool.value.findIndex((a) => a.id === id);
       if (ai !== -1) member = attendeesPool.value.splice(ai, 1)[0];
+      else {
+        const gi = guardiansPool.value.findIndex((g) => g.id === id);
+        if (gi !== -1) member = guardiansPool.value.splice(gi, 1)[0];
+      }
     }
     if (!member) return;
 
@@ -861,7 +905,11 @@ async function onDropToTeam(e: DragEvent, teamId: string) {
         ? Math.max(0, dragInsertion.value.index)
         : -1;
     // if we removed the member from the same team earlier, adjust index
-    if (removedFromTeamId === teamId && removedIndex >= 0 && ins > removedIndex) {
+    if (
+      removedFromTeamId === teamId &&
+      removedIndex >= 0 &&
+      ins > removedIndex
+    ) {
       ins = Math.max(0, ins - 1);
     }
     if (ins >= 0 && ins <= (team.members || []).length) {
@@ -870,8 +918,39 @@ async function onDropToTeam(e: DragEvent, teamId: string) {
       team.members.push(member);
     }
 
+    // Guardians are not allowed to be placed into teams unless they are leaders.
+    // If this was a guardian who is NOT a leader, revert the change and show a rejection flash.
+    if (member.is_guardian && !member.is_leader) {
+      // remove from team if we added it
+      const reidx = (team.members || []).findIndex((m) => m.id === member.id);
+      if (reidx !== -1) (team.members || []).splice(reidx, 1);
+      // revert to original source
+      if (removedFromTeamId) {
+        const origin = teams.value.find((t) => t.id === removedFromTeamId);
+        if (origin)
+          origin.members.splice(
+            Math.min(removedIndex, origin.members.length),
+            0,
+            member
+          );
+      } else if (source === "leader") {
+        if (!leadersPool.value.some((l) => l.id === member.id))
+          leadersPool.value.push(member);
+      } else {
+        // put back into guardiansPool
+        if (!guardiansPool.value.some((g) => g.id === member.id))
+          guardiansPool.value.push(member);
+      }
+      flashReject(member.id);
+      flashRejectTeam(teamId);
+      // clear insertion marker and stop
+      dragInsertion.value = { teamId: null, index: -1 };
+      return;
+    }
+
     // ensure member removed from attendeesPool
     attendeesPool.value = attendeesPool.value.filter((a) => a.id !== member.id);
+    guardiansPool.value = guardiansPool.value.filter((g) => g.id !== member.id);
 
     // persist teams to server (best-effort)
     try {
@@ -954,7 +1033,10 @@ function onDragOverTeam(e: DragEvent, teamId: string) {
     _hoverPending.index = candidateIndex;
     _hoverPending.timer = window.setTimeout(() => {
       // only apply if still matches pending
-      dragInsertion.value = { teamId: _hoverPending.teamId, index: _hoverPending.index };
+      dragInsertion.value = {
+        teamId: _hoverPending.teamId,
+        index: _hoverPending.index,
+      };
       _hoverPending.timer = null;
     }, 70) as unknown as number;
   } catch (err) {
@@ -979,6 +1061,7 @@ async function onDropToLeaders(e: DragEvent) {
     let originalTeamId: string | null = null;
     let originalIndex = -1;
     let removedFromAttendees = false;
+    let removedFromGuardians = false;
     // remove from teams if present
     for (const t of teams.value) {
       const mi = (t.members || []).findIndex((m) => m.id === id);
@@ -994,7 +1077,37 @@ async function onDropToLeaders(e: DragEvent) {
       if (ai !== -1) member = attendeesPool.value.splice(ai, 1)[0];
       removedFromAttendees = ai !== -1;
     }
+    if (!member) {
+      const gi = guardiansPool.value.findIndex((g) => g.id === id);
+      if (gi !== -1) member = guardiansPool.value.splice(gi, 1)[0];
+      removedFromGuardians = gi !== -1;
+    }
     if (!member) return;
+    if (member.is_guardian && !member.is_leader) {
+      // Guardians cannot be dropped into the Leaders panel
+      // revert to original location
+      if (originalTeamId) {
+        const t = teams.value.find((x) => x.id === originalTeamId);
+        if (t) {
+          t.members.splice(
+            Math.min(originalIndex, t.members.length),
+            0,
+            member
+          );
+          flashReject(member.id);
+        } else {
+          guardiansPool.value.push(member);
+        }
+      } else if (removedFromAttendees) {
+        guardiansPool.value.push(member);
+      } else if (removedFromGuardians) {
+        guardiansPool.value.push(member);
+      } else {
+        guardiansPool.value.push(member);
+      }
+      dragInsertion.value = { teamId: null, index: -1 };
+      return;
+    }
 
     // Only allow dropping into Leaders panel if the dragged item was already a leader
     // or the drag source was 'leader'. If a normal person is dragged, revert them to original place.
@@ -1003,7 +1116,11 @@ async function onDropToLeaders(e: DragEvent) {
       if (originalTeamId) {
         const t = teams.value.find((x) => x.id === originalTeamId);
         if (t) {
-          t.members.splice(Math.min(originalIndex, t.members.length), 0, member);
+          t.members.splice(
+            Math.min(originalIndex, t.members.length),
+            0,
+            member
+          );
           // flash this member's row to indicate rejection
           flashReject(member.id);
         } else {
@@ -1012,6 +1129,8 @@ async function onDropToLeaders(e: DragEvent) {
         }
       } else if (removedFromAttendees) {
         attendeesPool.value.push(member);
+      } else if (removedFromGuardians) {
+        guardiansPool.value.push(member);
       } else {
         // fallback
         attendeesPool.value.push(member);
@@ -1023,7 +1142,8 @@ async function onDropToLeaders(e: DragEvent) {
 
     // mark as leader
     member.is_leader = true;
-    if (!leadersPool.value.some((l) => l.id === member.id)) leadersPool.value.push(member);
+    if (!leadersPool.value.some((l) => l.id === member.id))
+      leadersPool.value.push(member);
 
     // persist (silent)
     try {
@@ -1043,6 +1163,85 @@ async function onDropToLeaders(e: DragEvent) {
   }
 }
 
+async function onDropToGuardians(e: DragEvent) {
+  e.preventDefault();
+  try {
+    const raw = e.dataTransfer?.getData("text/plain");
+    if (!raw) return;
+    const payload = JSON.parse(raw);
+    const { id } = payload;
+    // locate and remove from source
+    let member: any = null;
+    let originalTeamId: string | null = null;
+    let originalIndex = -1;
+    let removedFromAttendees = false;
+    let removedFromLeaders = false;
+    // remove from teams if present
+    for (const t of teams.value) {
+      const mi = (t.members || []).findIndex((m) => m.id === id);
+      if (mi !== -1) {
+        member = t.members.splice(mi, 1)[0];
+        originalTeamId = t.id;
+        originalIndex = mi;
+        break;
+      }
+    }
+    if (!member) {
+      const ai = attendeesPool.value.findIndex((a) => a.id === id);
+      if (ai !== -1) member = attendeesPool.value.splice(ai, 1)[0];
+      removedFromAttendees = ai !== -1;
+    }
+    if (!member) {
+      const li = leadersPool.value.findIndex((l) => l.id === id);
+      if (li !== -1) member = leadersPool.value.splice(li, 1)[0];
+      removedFromLeaders = li !== -1;
+    }
+    if (!member) return;
+
+    // Only accept into guardians pool if the member is actually a guardian
+    if (!member.is_guardian) {
+      // revert: put back where they came from
+      if (originalTeamId) {
+        const t = teams.value.find((x) => x.id === originalTeamId);
+        if (t)
+          t.members.splice(
+            Math.min(originalIndex, t.members.length),
+            0,
+            member
+          );
+        flashReject(member.id);
+      } else if (removedFromAttendees) {
+        attendeesPool.value.push(member);
+      } else if (removedFromLeaders) {
+        leadersPool.value.push(member);
+      } else {
+        attendeesPool.value.push(member);
+      }
+      dragInsertion.value = { teamId: null, index: -1 };
+      return;
+    }
+
+    // Accept guardian into guardiansPool
+    if (!guardiansPool.value.some((g) => g.id === member.id))
+      guardiansPool.value.push(member);
+
+    // persist teams silently
+    try {
+      await fetch(`${API}/api/teams`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teams: teams.value }),
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  } catch (e) {
+    console.error("drop to guardians err", e);
+  }
+  dragInsertion.value = { teamId: null, index: -1 };
+}
+
 // Persistence: save teams and pools to localStorage so state survives refresh
 const STORAGE_KEY = "teamgen_state_v1";
 function saveState() {
@@ -1051,6 +1250,7 @@ function saveState() {
       teams: teams.value,
       attendeesPool: attendeesPool.value,
       leadersPool: leadersPool.value,
+      guardiansPool: guardiansPool.value,
       preferredTeamCount: preferredTeamCount.value,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -1069,6 +1269,7 @@ function loadState() {
     const freshIds = new Set([
       ...attendeesPool.value.map((a) => a.id),
       ...leadersPool.value.map((a) => a.id),
+      ...guardiansPool.value.map((a) => a.id),
     ]);
     // Restore pools and teams only for attendees that still exist locally
     attendeesPool.value = (parsed.attendeesPool || [])
@@ -1077,6 +1278,9 @@ function loadState() {
     leadersPool.value = (parsed.leadersPool || [])
       .filter((a: any) => !freshIds.has(a.id))
       .concat(leadersPool.value);
+    guardiansPool.value = (parsed.guardiansPool || [])
+      .filter((a: any) => !freshIds.has(a.id))
+      .concat(guardiansPool.value);
     teams.value = (parsed.teams || []).map((t: any) => ({
       id: t.id,
       name: t.name,
@@ -1091,7 +1295,7 @@ function loadState() {
 
 // Persist whenever key state changes
 watch(
-  [teams, attendeesPool, leadersPool, preferredTeamCount],
+  [teams, attendeesPool, leadersPool, guardiansPool, preferredTeamCount],
   () => {
     saveState();
   },
@@ -1295,7 +1499,7 @@ function exportTeams() {
       <div class="grid gap-4 grid-cols-1 lg:grid-cols-4">
         <!-- Leaders panel -->
         <aside class="col-span-1">
-          <div class="border rounded p-3 bg-white sticky top-6">
+          <div class="border rounded p-3 bg-white top-6">
             <div @dragover.prevent @drop="onDropToLeaders">
               <div class="flex items-center justify-between mb-2">
                 <h3 class="font-semibold">Leaders</h3>
@@ -1325,7 +1529,8 @@ function exportTeams() {
                       </div>
                       <div>
                         <div class="text-sm font-medium capitalize">
-                          {{ l.first_name.toLowerCase() }} {{ l.last_name.toLowerCase() }}
+                          {{ l.first_name.toLowerCase() }}
+                          {{ l.last_name.toLowerCase() }}
                         </div>
                         <div class="text-xs text-gray-500">
                           {{ l.congregation }} • {{ l.age }} • {{ l.gender }}
@@ -1350,9 +1555,57 @@ function exportTeams() {
             </div>
           </div>
 
+          <!-- Guardians panel -->
+          <div class="mt-6 border rounded p-3 bg-white top-6">
+            <div @dragover.prevent @drop="onDropToGuardians">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold">Guardians</h3>
+                <span class="text-sm text-gray-500">{{
+                  guardiansPool.length
+                }}</span>
+              </div>
+              <div class="space-y-2">
+                <template v-if="guardiansPool.length === 0">
+                  <div class="text-sm text-gray-500">No guardians</div>
+                </template>
+                <template v-else>
+                  <div
+                    v-for="g in guardiansPool"
+                    :key="g.id"
+                    class="flex items-center justify-between"
+                    draggable="true"
+                    @dragstart="(e) => onDragStart(e, g, 'guardian')"
+                    @dragend="onDragEnd"
+                  >
+                    <div class="flex items-center gap-3">
+                      <div
+                        class="uppercase w-8 h-8 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center text-sm font-semibold"
+                      >
+                        {{ (g.first_name || "").charAt(0)
+                        }}{{ (g.last_name || "").charAt(0) }}
+                      </div>
+                      <div>
+                        <div class="text-sm font-medium capitalize">
+                          {{ g.first_name.toLowerCase() }}
+                          {{ g.last_name.toLowerCase() }}
+                        </div>
+                        <div class="text-xs text-gray-500">
+                          {{ g.congregation }} • {{ g.age }} • {{ g.gender }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-xs text-amber-600 font-medium">
+                      Guardian
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
           <div class="mt-6 text-sm text-center text-gray-600">
-            Note: Leaders are not auto-assigned. Regenerate clears existing
-            teams.
+            Note: Leaders and Guardians are not auto-assigned. Regenerate clears
+            existing teams.
           </div>
         </aside>
 
@@ -1361,6 +1614,9 @@ function exportTeams() {
             v-for="team in teams"
             :key="team.id"
             class="border rounded p-3 bg-white mb-4"
+            :class="{
+              'border-red-300 ring-2 ring-red-200': teamRejects[team.id],
+            }"
             @dragover="(e) => onDragOverTeam(e, team.id)"
             @dragleave="(e) => onDragLeaveTeam(e, team.id)"
             @drop="(e) => onDropToTeam(e, team.id)"
@@ -1424,7 +1680,10 @@ function exportTeams() {
                         <div
                           class="font-medium capitalize flex items-center gap-2"
                         >
-                          <span>{{ m.first_name.toLowerCase() }} {{ m.last_name.toLowerCase() }}</span>
+                          <span
+                            >{{ m.first_name.toLowerCase() }}
+                            {{ m.last_name.toLowerCase() }}</span
+                          >
                           <span
                             v-if="m.is_leader"
                             class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded"
@@ -1433,8 +1692,12 @@ function exportTeams() {
                         </div>
                       </div>
                     </td>
-                    <td class="py-3 capitalize">{{ m.congregation.toLowerCase() }}</td>
-                    <td class="py-3 capitalize">{{ m.nickname.toLowerCase() }}</td>
+                    <td class="py-3 capitalize">
+                      {{ m.congregation.toLowerCase() }}
+                    </td>
+                    <td class="py-3 capitalize">
+                      {{ m.nickname.toLowerCase() }}
+                    </td>
                     <td class="py-3">{{ m.gender }}</td>
                     <td class="py-3">{{ m.age }}</td>
                     <td class="py-3">

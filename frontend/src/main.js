@@ -11,6 +11,7 @@ import GroupingsPage from "./pages/GroupingsPage.vue";
 import { auth, refreshMe } from "./services/auth";
 import { branding } from "./services/branding";
 import TeamGenerator from "./pages/TeamGenerator.vue"; // Importing TeamGenerator component
+import ArchivesPage from "./pages/ArchivesPage.vue"; // Importing Archives (archives) page
 
 // --- Router ---
 const routes = [
@@ -24,6 +25,7 @@ const routes = [
   },
   { path: "/teams", component: TeamGenerator, meta: { requiresAuth: true } }, // Adding TeamGenerator route
   { path: "/settings", component: SettingsPage, meta: { requiresAuth: true } },
+  { path: "/archives", component: ArchivesPage, meta: { requiresAuth: true } },
 ];
 
 const router = createRouter({ history: createWebHistory(), routes });

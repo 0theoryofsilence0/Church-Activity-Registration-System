@@ -184,7 +184,7 @@ async function fetchCampers() {
   // Step 1: Fetch ALL data once to populate filter options
   if (!initialDataFetched) {
     try {
-      const r = await fetchWithCreds(`${API}/api/campers`); // unfiltered list
+      const r = await fetchWithCreds(`${API}/api/campers?deleted=1`); // unfiltered archived list
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       extractAllFilterOptions(data?.rows || []);
@@ -208,7 +208,9 @@ async function fetchCampers() {
     if (is_guardian.value !== "All")
       params.set("is_guardian", is_guardian.value === "Yes" ? "1" : "0");
 
-    const r = await fetchWithCreds(`${API}/api/campers?${params.toString()}`);
+  // ensure we fetch archived rows for this page
+  params.set('deleted', '1');
+  const r = await fetchWithCreds(`${API}/api/campers?${params.toString()}`);
     if (!r.ok) {
       if (r.status === 401) {
         error.value = "Session expired. Please log in again.";
@@ -362,39 +364,31 @@ function exportToSheet() {
   URL.revokeObjectURL(url);
 }
 
-/* ---------- Delete ---------- */
-async function deleteCamper(id, fullName) {
+/* ---------- Restore (Archives) ---------- */
+async function restoreCamper(id, fullName) {
   if (!isSuper.value) return;
-  showConfirm(`Delete ${fullName}?`, "Confirm Delete", async () => {
-    // Close modal immediately to avoid duplicate clicks triggering multiple deletes
+  showConfirm(`Restore ${fullName}?`, "Confirm Restore", async () => {
     modal.value.open = false;
-
-    // Prevent concurrent deletes for the same id
     if (deletingIds.has(id)) return;
     deletingIds.add(id);
     try {
       await withLoading(async () => {
-        const r = await fetchWithCreds(`${API}/api/campers/${id}`, {
-          method: "DELETE",
+        // POST to restore; backend accepts archived_id or original_id
+        const r = await fetchWithCreds(`${API}/api/campers/${id}/restore`, {
+          method: "POST",
         });
-
-        // Try to parse JSON safely; backend may return no-body
         const j = await r.json().catch(() => null);
-
         if (r.ok && (j === null || j.ok === undefined || j.ok === true)) {
-          // Success
           await fetchCampers();
-          await fetchGrandTotal(); // keep the total in sync
-          toastSuccess("Deleted", "Success");
+          await fetchGrandTotal();
+          toastSuccess("Restored", "Success");
         } else {
-          const msg =
-            (j && (j.message || j.error)) ||
-            `Failed to delete (HTTP ${r.status})`;
+          const msg = (j && (j.message || j.error)) || `Failed to restore (HTTP ${r.status})`;
           toastError(msg, "Error");
         }
-      }, "Deleting attendee…");
+      }, "Restoring attendee…");
     } catch (e) {
-      toastError(e?.message || "Failed to delete", "Error");
+      toastError(e?.message || "Failed to restore", "Error");
     } finally {
       deletingIds.delete(id);
     }
@@ -688,7 +682,7 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
               </option>
             </select>
           </label>
-          <label  class="block">
+          <label v-if="isCamp" class="block">
             <span :class="labelCls">Guardian</span>
             <select v-model="is_guardian" :class="selectCls">
               <option v-for="opt in is_guardians" :key="opt" :value="opt">
@@ -795,7 +789,7 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                 </th>
 
                 <th
-                 
+                  v-if="isCamp"
                   class="px-4 py-3 text-left text-gray-600 text-xs uppercase tracking-wide cursor-pointer"
                   @click="sortBy('is_guardian')"
                 >
@@ -890,7 +884,7 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                   </span>
                 </td>
 
-                <td class="px-4 py-3 text-sm">
+                <td v-if="isCamp" class="px-4 py-3 text-sm">
                   <span
                     :class="[
                       'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
@@ -923,12 +917,6 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                     class="flex gap-2 items-center align-center text-center justify-center"
                   >
                     <button
-                      @click="openEditModal(c)"
-                      class="inline-flex items-center justify-center rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 shadow-sm transition hover:bg-indigo-50"
-                    >
-                      Edit
-                    </button>
-                    <button
                       v-if="isCamp && isSuper"
                       @click="openReceiptPreview(c)"
                       class="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-indigo-700"
@@ -937,12 +925,10 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                     </button>
                     <button
                       v-if="isSuper"
-                      @click="
-                        deleteCamper(c.id, `${c.first_name} ${c.last_name}`)
-                      "
-                      class="inline-flex items-center justify-center rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm transition hover:bg-red-50"
+                      @click="restoreCamper(c.id, `${c.first_name} ${c.last_name}`)"
+                      class="inline-flex items-center justify-center rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 shadow-sm transition hover:bg-emerald-50"
                     >
-                      Delete
+                      Restore
                     </button>
                   </div>
                 </td>
@@ -1200,6 +1186,7 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                 Baptized?
               </th>
               <th
+                v-if="isCamp"
                 class="px-3 py-2 text-left font-semibold text-gray-600 cursor-pointer"
               >
                 Guardian?
@@ -1216,14 +1203,14 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
               <td v-if="isCamp" class="px-3 py-2">
                 {{ c.is_baptized ? "Yes" : "No" }}
               </td>
-              <td class="px-3 py-2">
+              <td v-if="isCamp" class="px-3 py-2">
                 {{ c.is_guardian ? "Yes" : "No" }}
               </td>
             </tr>
             <tr v-if="!campers.length">
               <td
                 class="px-3 py-4 text-center text-gray-500"
-                :colspan="isCamp ? 7 : 6"
+                :colspan="isCamp ? 7 : 5"
               >
                 No campers found
               </td>

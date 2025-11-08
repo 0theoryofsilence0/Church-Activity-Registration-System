@@ -7,6 +7,7 @@ import { branding } from "../services/branding";
 import DashboardIcon from "../assets/dashboard-svgrepo-com.svg";
 import RegisterIcon from "../assets/register-svgrepo-com.svg";
 import GroupIcon from "../assets/group-svgrepo-com.svg";
+import ArchiveIcon from "../assets/archive-svgrepo-com.svg";
 import LogoutIcon from "../assets/logout-2-svgrepo-com.svg";
 import carsLogo from "../assets/cars-logo.png";
 
@@ -99,6 +100,17 @@ const initials = computed(() => {
             <GroupIcon class="w-5 h-5 text-indigo-300" />
             <span v-if="isShownExpanded">Teams</span>
           </RouterLink>
+        </li>
+
+        <li v-if="auth.user?.role === 'super'">
+          <RouterLink
+              to="/archives"
+              class="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-indigo-50"
+              :class="isActive('/archives') ? 'bg-indigo-50 text-gray-900' : ''"
+            >
+              <ArchiveIcon class="w-5 h-5 text-indigo-300" />
+              <span v-if="isShownExpanded">Archives</span>
+            </RouterLink>
         </li>
       </ul>
     </nav>

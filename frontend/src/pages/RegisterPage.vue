@@ -486,7 +486,6 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                 </label>
 
                 <label
-                  v-if="isCamp"
                   class="w-full h-full flex gap-3 items-center sm:col-span-2 rounded-lg border border-gray-200 p-3"
                 >
                   <input

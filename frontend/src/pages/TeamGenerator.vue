@@ -46,6 +46,34 @@ const pendingUndos: Record<
   { timer: number | null; finalize: () => Promise<void> }
 > = {};
 
+// Helpers to normalize names/congregation when saving
+function normalizeWord(s: any) {
+  if (s === null || s === undefined) return s;
+  const str = String(s).trim();
+  if (!str) return str;
+  return str
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function normalizeMember(m: any) {
+  if (!m) return m;
+  return {
+    ...m,
+    first_name: normalizeWord(m.first_name),
+    last_name: normalizeWord(m.last_name),
+    congregation: normalizeWord(m.congregation),
+  };
+}
+
+function normalizeTeamsForSave(ts: Team[]) {
+  return (ts || []).map((t) => ({
+    ...t,
+    members: (t.members || []).map((m: any) => normalizeMember(m)),
+  }));
+}
+
 // SSE handlers (module-scoped so we can add/remove them cleanly)
 const onTeamsUpdated = async (ev: any) => {
   const payload = ev?.detail || {};
@@ -105,7 +133,7 @@ async function saveTeamsConfirmed() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teams: teams.value }),
+  body: JSON.stringify({ teams: normalizeTeamsForSave(teams.value) }),
       });
       if (!r.ok) throw new Error("Server save failed");
       const data = await r.json().catch(() => ({}));
@@ -308,12 +336,53 @@ async function confirmResetPools() {
       "Refresh attendees will reload attendees and may redistribute members. Continue?",
       async () => {
         await withLoading(() => resetPools(), "Refreshing attendees…");
+        // After re-assigning attendees, persist the new teams to server
+        try {
+          // persist local first
+          saveState();
+          const r = await fetch(`${API}/api/teams`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ teams: normalizeTeamsForSave(teams.value) }),
+          });
+          if (r.ok) {
+            const data = await r.json().catch(() => ({}));
+            lastSavedAt.value = data?.saved_at || new Date().toISOString();
+            pushToast({ type: "success", message: "Teams saved after re-assign", title: "Saved" });
+          } else {
+            pushToast({ type: "error", message: "Failed to save teams after re-assign", title: "Error" });
+          }
+        } catch (e) {
+          console.error("Failed to save teams after re-assign", e);
+          pushToast({ type: "error", message: (e as any)?.message || "Failed to save teams after re-assign", title: "Error" });
+        }
       }
     );
     return;
   }
   // No teams - safe to refresh without confirmation
   await withLoading(() => resetPools(), "Refreshing attendees…");
+  // Persist teams (even if empty) after refresh
+  try {
+    saveState();
+    const r = await fetch(`${API}/api/teams`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ teams: normalizeTeamsForSave(teams.value) }),
+    });
+    if (r.ok) {
+      const data = await r.json().catch(() => ({}));
+      lastSavedAt.value = data?.saved_at || new Date().toISOString();
+      pushToast({ type: "success", message: "Teams saved after refresh", title: "Saved" });
+    } else {
+      pushToast({ type: "error", message: "Failed to save teams after refresh", title: "Error" });
+    }
+  } catch (e) {
+    console.error("Failed to save teams after refresh", e);
+    pushToast({ type: "error", message: (e as any)?.message || "Failed to save teams after refresh", title: "Error" });
+  }
 }
 
 onMounted(async () => {
@@ -647,7 +716,7 @@ function reconcileTeamsAfterRefresh() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teams: teams.value }),
+    body: JSON.stringify({ teams: normalizeTeamsForSave(teams.value) }),
       });
     } catch (e) {
       /* ignore */
@@ -958,7 +1027,7 @@ async function onDropToTeam(e: DragEvent, teamId: string) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teams: teams.value }),
+  body: JSON.stringify({ teams: normalizeTeamsForSave(teams.value) }),
       });
       // no toast for drag/paste operations (silent)
     } catch (e) {
@@ -1151,7 +1220,7 @@ async function onDropToLeaders(e: DragEvent) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teams: teams.value }),
+  body: JSON.stringify({ teams: normalizeTeamsForSave(teams.value) }),
       });
     } catch (e) {
       console.error("save after drop to leaders failed", e);
@@ -1231,7 +1300,7 @@ async function onDropToGuardians(e: DragEvent) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teams: teams.value }),
+    body: JSON.stringify({ teams: normalizeTeamsForSave(teams.value) }),
       });
     } catch (e) {
       /* ignore */
@@ -1247,7 +1316,7 @@ const STORAGE_KEY = "teamgen_state_v1";
 function saveState() {
   try {
     const payload = {
-      teams: teams.value,
+      teams: normalizeTeamsForSave(teams.value),
       attendeesPool: attendeesPool.value,
       leadersPool: leadersPool.value,
       guardiansPool: guardiansPool.value,
@@ -1532,8 +1601,8 @@ function exportTeams() {
                           {{ l.first_name.toLowerCase() }}
                           {{ l.last_name.toLowerCase() }}
                         </div>
-                        <div class="text-xs text-gray-500">
-                          {{ l.congregation }} • {{ l.age }} • {{ l.gender }}
+                        <div class="text-xs text-gray-500 capitalize">
+                          {{ l.congregation.toLowerCase() }} • {{ l.age }} • {{ l.gender }}
                         </div>
                       </div>
                     </div>

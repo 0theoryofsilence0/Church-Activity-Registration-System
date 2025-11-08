@@ -541,6 +541,22 @@ function goToPage(p) {
   currentPage.value = Math.min(Math.max(1, p), totalPages.value);
 }
 
+// Visible pages for pager: produce a sliding window centered on currentPage
+const visiblePages = computed(() => {
+  const maxButtons = 7;
+  const tp = totalPages.value;
+  const cp = currentPage.value;
+  if (tp <= maxButtons) return Array.from({ length: tp }, (_, i) => i + 1);
+  const half = Math.floor(maxButtons / 2);
+  let start = Math.max(1, cp - half);
+  let end = Math.min(tp, start + maxButtons - 1);
+  // shift window left if we're at the far end
+  start = Math.max(1, end - maxButtons + 1);
+  const pages = [];
+  for (let i = start; i <= end; i++) pages.push(i);
+  return pages;
+});
+
 /* ---------- Currency ---------- */
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -994,7 +1010,7 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
               ‹
             </button>
             <button
-              v-for="p in Math.min(7, totalPages)"
+              v-for="p in visiblePages"
               :key="p + '-' + currentPage"
               class="rounded-md px-3 py-1 text-sm"
               :class="
@@ -1002,13 +1018,9 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                   ? 'bg-indigo-600 text-white'
                   : 'text-gray-700 hover:bg-gray-100'
               "
-              @click="
-                goToPage(
-                  Math.min(totalPages, Math.max(1, currentPage - 3) + (p - 1))
-                )
-              "
+              @click="goToPage(p)"
             >
-              {{ Math.min(totalPages, Math.max(1, currentPage - 3) + (p - 1)) }}
+              {{ p }}
             </button>
             <button
               class="rounded-md px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-40"

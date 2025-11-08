@@ -18,6 +18,25 @@ const API = "";
 const fetchWithCreds = (url, opts = {}) =>
   fetch(url, { credentials: "include", ...opts });
 
+// Normalize helper: trim, collapse spaces, and capitalize each word
+function normalizeWord(s) {
+  const raw = String(s || "").trim().replace(/\s+/g, " ");
+  if (!raw) return "";
+  return raw
+    .split(" ")
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ""))
+    .join(" ");
+}
+
+function normalizeSnapshot(snap) {
+  return {
+    ...snap,
+    first_name: normalizeWord(snap.first_name),
+    last_name: normalizeWord(snap.last_name),
+    congregation: normalizeWord(snap.congregation),
+  };
+}
+
 /* ---------- Branding-aware flags/values ---------- */
 const isCamp = computed(() => branding.isCamp.value);
 const fee = computed(() => Number(branding.registrationFee.value || 0));
@@ -117,12 +136,14 @@ async function printFromPreview() {
 }
 
 /* ---------- Duplicate check & submit ---------- */
-async function existsCheck() {
+async function existsCheck(snapshot = null) {
+  const src = snapshot || form.value;
+  const s = normalizeSnapshot(src);
   const params = new URLSearchParams({
-    first_name: form.value.first_name || "",
-    last_name: form.value.last_name || "",
-    age: String(form.value.age ?? ""),
-    congregation: form.value.congregation || "",
+    first_name: s.first_name || "",
+    last_name: s.last_name || "",
+    age: String(s.age ?? ""),
+    congregation: s.congregation || "",
   });
   const r = await fetchWithCreds(
     `${API}/api/campers/exists?${params.toString()}`
@@ -146,10 +167,11 @@ async function submitForm() {
 
     await withLoading(async () => {
       const snapshot = { ...form.value };
+      const normalized = normalizeSnapshot(snapshot);
       const r = await fetchWithCreds(`${API}/api/campers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(snapshot),
+        body: JSON.stringify(normalized),
       });
 
       if (r.status === 409) {
@@ -170,9 +192,9 @@ async function submitForm() {
 
       success.value = {
         id: data.id,
-        name: `${snapshot.first_name} ${snapshot.last_name}`.trim(),
+        name: `${normalized.first_name} ${normalized.last_name}`.trim(),
         invoice_no: data.invoice_no || "",
-        snapshot,
+        snapshot: normalized,
       };
       toastSuccess(`Registered: ${success.value.name}`, "Success");
     }, "Registering attendee…");

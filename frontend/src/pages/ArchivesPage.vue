@@ -596,10 +596,11 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
       >
         <div>
           <h1 class="text-2xl font-semibold text-gray-900 tracking-tight">
-            Attendees
+            Archived Attendees
           </h1>
           <p class="mt-1 text-sm text-gray-500">
-            Filter the list and print receipts or the full roster.
+            Lists of all archived/deleted attendees. You can restore attendees from
+            here.
           </p>
         </div>
         <div class="flex gap-3 items-center flex-col lg:flex-row">

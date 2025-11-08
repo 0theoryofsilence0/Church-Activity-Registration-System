@@ -818,6 +818,7 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                   Sports
                 </th>
                 <th
+                  v-if="isCamp"
                   class="px-4 py-3 text-left text-xs uppercase tracking-wide text-gray-600"
                 >
                   Additional Info
@@ -848,14 +849,14 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                     }}{{ (c.last_name || "").charAt(0) }}
                   </div>
                   <div class="text-sm font-medium capitalize">
-                    {{ c.first_name }} {{ c.last_name }}
+                    {{ c.first_name.toLowerCase() }} {{ c.last_name.toLowerCase() }}
                   </div>
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-700 capitalize">
-                  {{ c.nickname }}
+                  {{ c.nickname.toLowerCase() }}
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-700 capitalize">
-                  {{ c.congregation || "-" }}
+                  {{ c.congregation.toLowerCase() || "-" }}
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-700">
                   {{ c.age || "-" }}
@@ -914,7 +915,7 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                 >
                   {{ c.sports || "N/A" }}
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-700 capitalize">
+                <td  v-if="isCamp" class="px-4 py-3 text-sm text-gray-700 capitalize">
                   {{ c.additional_info || "N/A" }}
                 </td>
                 <td class="px-4 py-3">

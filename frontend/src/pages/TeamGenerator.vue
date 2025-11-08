@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick } from "vue";
+import {
+  ref,
+  computed,
+  reactive,
+  watch,
+  onMounted,
+  onUnmounted,
+  nextTick,
+} from "vue";
 import { useRouter } from "vue-router";
 import { generateTeams, fullName, statsForTeams } from "../utils/teamGen.js";
 import { withLoading, push as pushToast } from "../services/ui";
@@ -38,9 +46,18 @@ const pendingUndos: Record<
 // SSE handlers (module-scoped so we can add/remove them cleanly)
 const onTeamsUpdated = async (ev: any) => {
   const payload = ev?.detail || {};
-  const localDirty = lastSavedAt.value && lastSavedAt.value !== payload.saved_at;
+  const localDirty =
+    lastSavedAt.value && lastSavedAt.value !== payload.saved_at;
   if (teams.value.length && localDirty) {
-    pushToast({ type: 'info', title: 'Teams changed remotely', message: 'Teams were updated on another device.', actionLabel: 'Load', action: async () => { await loadTeamsFromServerSilent(); } });
+    pushToast({
+      type: "info",
+      title: "Teams changed remotely",
+      message: "Teams were updated on another device.",
+      actionLabel: "Load",
+      action: async () => {
+        await loadTeamsFromServerSilent();
+      },
+    });
     return;
   }
   await loadTeamsFromServerSilent();
@@ -48,9 +65,18 @@ const onTeamsUpdated = async (ev: any) => {
 
 const onTeamsCleared = async (ev: any) => {
   const payload = ev?.detail || {};
-  const localDirty = lastSavedAt.value && lastSavedAt.value !== payload.saved_at;
+  const localDirty =
+    lastSavedAt.value && lastSavedAt.value !== payload.saved_at;
   if (teams.value.length && localDirty) {
-    pushToast({ type: 'info', title: 'Teams cleared remotely', message: 'Teams were cleared on another device.', actionLabel: 'Load', action: async () => { await loadTeamsFromServerSilent(); } });
+    pushToast({
+      type: "info",
+      title: "Teams cleared remotely",
+      message: "Teams were cleared on another device.",
+      actionLabel: "Load",
+      action: async () => {
+        await loadTeamsFromServerSilent();
+      },
+    });
     return;
   }
   await loadTeamsFromServerSilent();
@@ -179,16 +205,26 @@ async function loadTeamsFromServerSilent() {
     const allMembers = teams.value.flatMap((t) => t.members);
     allMembers.forEach((m) => {
       if (m.is_leader) {
-        if (!leadersPool.value.some((x) => x.id === m.id)) leadersPool.value.push(m);
+        if (!leadersPool.value.some((x) => x.id === m.id))
+          leadersPool.value.push(m);
       } else {
-        if (!attendeesPool.value.some((x) => x.id === m.id)) attendeesPool.value.push(m);
+        if (!attendeesPool.value.some((x) => x.id === m.id))
+          attendeesPool.value.push(m);
       }
     });
 
-    teams.value = serverTeams.map((t: any) => ({ id: t.id, name: t.name, members: (t.members || []).map((m: any) => ({ ...m })) }));
+    teams.value = serverTeams.map((t: any) => ({
+      id: t.id,
+      name: t.name,
+      members: (t.members || []).map((m: any) => ({ ...m })),
+    }));
     lastSavedAt.value = data?.saved_at || lastSavedAt.value;
     saveStatus.value = `Loaded ${teams.value.length} teams from server`;
-    pushToast({ type: "info", message: `Loaded ${teams.value.length} teams`, title: "Loaded" });
+    pushToast({
+      type: "info",
+      message: `Loaded ${teams.value.length} teams`,
+      title: "Loaded",
+    });
     // ensure pools are stripped of assigned members
     stripAssignedFromPools(teams.value);
     return true;
@@ -199,7 +235,10 @@ async function loadTeamsFromServerSilent() {
 }
 
 // Cross-device sync: poll server for teams and prompt user to load when changed
-const _syncTimer = { id: null as number | null, lastSeen: null as string | null };
+const _syncTimer = {
+  id: null as number | null,
+  lastSeen: null as string | null,
+};
 function startTeamsSync(intervalMs = 8000) {
   // only start one
   if (_syncTimer.id) return;
@@ -218,7 +257,9 @@ function startTeamsSync(intervalMs = 8000) {
         pushToast({
           type: "info",
           title: "Remote update",
-          message: `Teams were saved by ${data.saved_by || 'another device'} at ${new Date(savedAt).toLocaleString()}`,
+          message: `Teams were saved by ${
+            data.saved_by || "another device"
+          } at ${new Date(savedAt).toLocaleString()}`,
           actionLabel: "Load",
           action: async () => {
             await loadTeamsFromServerSilent();
@@ -289,15 +330,27 @@ onMounted(async () => {
   // start polling for cross-device changes
   startTeamsSync();
   // respond to realtime load requests from SSE service
-  document.addEventListener('realtime:load-remote-teams', loadTeamsFromServerSilent);
+  document.addEventListener(
+    "realtime:load-remote-teams",
+    loadTeamsFromServerSilent
+  );
   // auto-refresh when SSE notifies of team changes. If the user has local unsaved changes
   // we surface a toast offering to load remote teams instead of overwriting silently.
   const onTeamsUpdated = async (ev) => {
     const payload = ev?.detail || {};
     // if we have local edits since lastSavedAt, prompt user instead
-    const localDirty = lastSavedAt.value && lastSavedAt.value !== payload.saved_at;
+    const localDirty =
+      lastSavedAt.value && lastSavedAt.value !== payload.saved_at;
     if (teams.value.length && localDirty) {
-      pushToast({ type: 'info', title: 'Teams changed remotely', message: 'Teams were updated on another device.', actionLabel: 'Load', action: async () => { await loadTeamsFromServerSilent(); } });
+      pushToast({
+        type: "info",
+        title: "Teams changed remotely",
+        message: "Teams were updated on another device.",
+        actionLabel: "Load",
+        action: async () => {
+          await loadTeamsFromServerSilent();
+        },
+      });
       return;
     }
     // no local teams or no local edits: auto-load silently
@@ -306,22 +359,34 @@ onMounted(async () => {
   const onTeamsCleared = async (ev) => {
     // similar flow for clears
     const payload = ev?.detail || {};
-    const localDirty = lastSavedAt.value && lastSavedAt.value !== payload.saved_at;
+    const localDirty =
+      lastSavedAt.value && lastSavedAt.value !== payload.saved_at;
     if (teams.value.length && localDirty) {
-      pushToast({ type: 'info', title: 'Teams cleared remotely', message: 'Teams were cleared on another device.', actionLabel: 'Load', action: async () => { await loadTeamsFromServerSilent(); } });
+      pushToast({
+        type: "info",
+        title: "Teams cleared remotely",
+        message: "Teams were cleared on another device.",
+        actionLabel: "Load",
+        action: async () => {
+          await loadTeamsFromServerSilent();
+        },
+      });
       return;
     }
     await loadTeamsFromServerSilent();
   };
-  document.addEventListener('realtime:teams:updated', onTeamsUpdated);
-  document.addEventListener('realtime:teams:cleared', onTeamsCleared);
+  document.addEventListener("realtime:teams:updated", onTeamsUpdated);
+  document.addEventListener("realtime:teams:cleared", onTeamsCleared);
 });
 
 onUnmounted(() => {
   stopTeamsSync();
-  document.removeEventListener('realtime:load-remote-teams', loadTeamsFromServerSilent);
-  document.removeEventListener('realtime:teams:updated', onTeamsUpdated);
-  document.removeEventListener('realtime:teams:cleared', onTeamsCleared);
+  document.removeEventListener(
+    "realtime:load-remote-teams",
+    loadTeamsFromServerSilent
+  );
+  document.removeEventListener("realtime:teams:updated", onTeamsUpdated);
+  document.removeEventListener("realtime:teams:cleared", onTeamsCleared);
 });
 const API = "";
 
@@ -396,7 +461,10 @@ function doGenerate(N: number) {
   // Use pure generator
   const nonLeaders = attendeesPool.value.slice();
   // use strict parity to balance gender and age
-  const gen = generateTeams(nonLeaders, N, { parity: 'strict', algo: 'greedy' });
+  const gen = generateTeams(nonLeaders, N, {
+    parity: "strict",
+    algo: "greedy",
+  });
 
   // Create Team objects
   teams.value = gen.map((members, i) => ({
@@ -436,26 +504,39 @@ function reconcileTeamsAfterRefresh() {
   const touchedTeams = new Set<string>();
 
   // Build sets of currently assigned IDs (leaders + non-leaders stay)
-  const assignedIds = new Set(teams.value.flatMap((t) => (t.members || []).map((m) => m.id)));
+  const assignedIds = new Set(
+    teams.value.flatMap((t) => (t.members || []).map((m) => m.id))
+  );
 
   // Identify unassigned non-leader attendees from the pool
-  const unassigned = attendeesPool.value.filter((a) => !a.is_leader && !assignedIds.has(a.id));
+  const unassigned = attendeesPool.value.filter(
+    (a) => !a.is_leader && !assignedIds.has(a.id)
+  );
 
   // Determine how many non-leaders should be in each team (target sizes)
-  const currentNonLeaderCounts = teams.value.map((t) => (t.members || []).filter((m) => !m.is_leader).length);
-  const totalNonLeaders = currentNonLeaderCounts.reduce((s, v) => s + v, 0) + unassigned.length;
+  const currentNonLeaderCounts = teams.value.map(
+    (t) => (t.members || []).filter((m) => !m.is_leader).length
+  );
+  const totalNonLeaders =
+    currentNonLeaderCounts.reduce((s, v) => s + v, 0) + unassigned.length;
   const teamCount = teams.value.length;
   const baseSize = Math.floor(totalNonLeaders / teamCount);
   const teamsWithExtra = totalNonLeaders % teamCount;
-  const targetSizes = Array.from({ length: teamCount }, (_, i) => (i < teamsWithExtra ? baseSize + 1 : baseSize));
+  const targetSizes = Array.from({ length: teamCount }, (_, i) =>
+    i < teamsWithExtra ? baseSize + 1 : baseSize
+  );
 
   // Track totals (include leaders ages so age-priority accounts for leaders) and current sizes
-  const totals = teams.value.map((t) => (t.members || []).reduce((s: number, m: any) => s + (m.age || 0), 0));
+  const totals = teams.value.map((t) =>
+    (t.members || []).reduce((s: number, m: any) => s + (m.age || 0), 0)
+  );
   const sizes = teams.value.map((t) => (t.members || []).length);
   const counts = teams.value.map((t) => {
     const c = { m: 0, f: 0, o: 0 };
     (t.members || []).forEach((m: any) => {
-      if (m.gender === 'Male') c.m++; else if (m.gender === 'Female') c.f++; else c.o++;
+      if (m.gender === "Male") c.m++;
+      else if (m.gender === "Female") c.f++;
+      else c.o++;
     });
     return c;
   });
@@ -471,19 +552,24 @@ function reconcileTeamsAfterRefresh() {
     let bestPenalty = Infinity;
     for (let i = 0; i < teamCount; i++) {
       // available slots compare non-leader counts
-      const nonLeaderCount = (teams.value[i].members || []).filter((m: any) => !m.is_leader).length;
+      const nonLeaderCount = (teams.value[i].members || []).filter(
+        (m: any) => !m.is_leader
+      ).length;
       if (nonLeaderCount < targetSizes[i]) {
         const newTotal = totals[i] + (person.age || 0);
         // compute overall gender penalty if placed here
         const c = counts[i];
-        const cm = c.m + (person.gender === 'Male' ? 1 : 0);
-        const cf = c.f + (person.gender === 'Female' ? 1 : 0);
+        const cm = c.m + (person.gender === "Male" ? 1 : 0);
+        const cf = c.f + (person.gender === "Female" ? 1 : 0);
         const overallPenalty = counts.reduce((s, x, idx) => {
           if (idx === i) return s + Math.abs(cm - cf);
           return s + Math.abs(x.m - x.f);
         }, 0);
 
-        if (newTotal < bestTotal || (newTotal === bestTotal && overallPenalty < bestPenalty)) {
+        if (
+          newTotal < bestTotal ||
+          (newTotal === bestTotal && overallPenalty < bestPenalty)
+        ) {
           bestTotal = newTotal;
           bestPenalty = overallPenalty;
           bestIdx = i;
@@ -492,16 +578,22 @@ function reconcileTeamsAfterRefresh() {
     }
     if (bestIdx === -1) break; // no available slot
     teams.value[bestIdx].members.push(person);
-    totals[bestIdx] += (person.age || 0);
+    totals[bestIdx] += person.age || 0;
     sizes[bestIdx]++;
-    if (person.gender === 'Male') counts[bestIdx].m++; else if (person.gender === 'Female') counts[bestIdx].f++; else counts[bestIdx].o++;
+    if (person.gender === "Male") counts[bestIdx].m++;
+    else if (person.gender === "Female") counts[bestIdx].f++;
+    else counts[bestIdx].o++;
     redistributed++;
     touchedTeams.add(teams.value[bestIdx].id);
   }
 
   // Remove newly assigned attendees from attendeesPool
-  const nowAssigned = new Set(teams.value.flatMap((t) => (t.members || []).map((m) => m.id)));
-  attendeesPool.value = attendeesPool.value.filter((a) => !nowAssigned.has(a.id));
+  const nowAssigned = new Set(
+    teams.value.flatMap((t) => (t.members || []).map((m) => m.id))
+  );
+  attendeesPool.value = attendeesPool.value.filter(
+    (a) => !nowAssigned.has(a.id)
+  );
 
   reconcileInfo.value = {
     redistributed,
@@ -570,6 +662,8 @@ function deleteTeam(teamId: string) {
       } catch (e) {}
       stripAssignedFromPools(teams.value);
       // no explicit removal of toast since ui handles expiry
+      // clear insertion
+      dragInsertion.value = { teamId: null, index: -1 };
       delete pendingUndos[toastId as any];
     }, 5000);
     pendingUndos[toastId as any] = { timer, finalize: async () => {} };
@@ -609,6 +703,32 @@ const availableLeaders = computed(() =>
     (l) => !teams.value.some((t) => t.members.some((m) => m.id === l.id))
   )
 );
+
+// Drag insertion state: which team and index the dragged item would be inserted at
+const dragInsertion = ref({ teamId: null as string | null, index: -1 });
+
+// Hover stability helpers to prevent placeholder jitter
+let _hoverPending: {
+  teamId: string | null;
+  index: number;
+  timer: number | null;
+} = { teamId: null, index: -1, timer: null };
+
+// Rejection flash state: mark member rows to flash when an invalid drop occurs
+const rejectFlash = ref<Record<string, boolean>>({});
+
+function flashReject(memberId: string, duration = 600) {
+  try {
+    rejectFlash.value[memberId] = true;
+    window.setTimeout(() => {
+      try {
+        delete rejectFlash.value[memberId];
+      } catch (e) {}
+    }, duration);
+  } catch (e) {
+    /* ignore */
+  }
+}
 
 function assignLeaderToTeam(leaderId: string, teamId: string) {
   if (!teamId) return;
@@ -667,6 +787,260 @@ function confirmRemoveMember(teamId: string, memberId: string) {
   openConfirm("Remove this member from the team?", () => {
     removeMemberFromTeam(teamId, memberId);
   });
+}
+
+// Drag & drop handlers (simplified)
+// Use plain HTML5 DataTransfer payloads and avoid custom drag images/visibility tricks
+// which can be unreliable across browsers. This restores a stable drag/drop flow.
+function onDragStart(
+  e: DragEvent,
+  member: any,
+  source: string,
+  fromTeamId?: string
+) {
+  try {
+    const payload = { id: member.id, source, fromTeamId: fromTeamId || null };
+    e.dataTransfer?.setData("text/plain", JSON.stringify(payload));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  } catch (err) {
+    console.error("dragstart err", err);
+  }
+}
+
+function onDragEnd(e: DragEvent) {
+  // clear insertion state and any pending hover timers
+  try {
+    if (_hoverPending.timer) {
+      clearTimeout(_hoverPending.timer as any);
+      _hoverPending.timer = null;
+    }
+  } catch (err) {}
+  dragInsertion.value = { teamId: null, index: -1 };
+}
+
+async function onDropToTeam(e: DragEvent, teamId: string) {
+  e.preventDefault();
+  try {
+    const raw = e.dataTransfer?.getData("text/plain");
+    if (!raw) return;
+    const payload = JSON.parse(raw);
+    const { id, source } = payload;
+
+    // locate member and remove from source
+    let member: any = null;
+    let removedFromTeamId: string | null = null;
+    let removedIndex = -1;
+    if (source === "leader") {
+      const idx = leadersPool.value.findIndex((x) => x.id === id);
+      if (idx !== -1) member = leadersPool.value.splice(idx, 1)[0];
+    }
+    if (!member) {
+      // search teams
+      for (const t of teams.value) {
+        const mi = (t.members || []).findIndex((m) => m.id === id);
+        if (mi !== -1) {
+          member = t.members.splice(mi, 1)[0];
+          removedFromTeamId = t.id;
+          removedIndex = mi;
+          break;
+        }
+      }
+    }
+    if (!member) {
+      const ai = attendeesPool.value.findIndex((a) => a.id === id);
+      if (ai !== -1) member = attendeesPool.value.splice(ai, 1)[0];
+    }
+    if (!member) return;
+
+    // add to destination team (attempt insertion at hovered index, fallback to append)
+    const team = teams.value.find((t) => t.id === teamId);
+    if (!team) return;
+    // compute desired insertion index from dragInsertion
+    let ins =
+      dragInsertion.value.teamId === teamId
+        ? Math.max(0, dragInsertion.value.index)
+        : -1;
+    // if we removed the member from the same team earlier, adjust index
+    if (removedFromTeamId === teamId && removedIndex >= 0 && ins > removedIndex) {
+      ins = Math.max(0, ins - 1);
+    }
+    if (ins >= 0 && ins <= (team.members || []).length) {
+      team.members.splice(ins, 0, member);
+    } else {
+      team.members.push(member);
+    }
+
+    // ensure member removed from attendeesPool
+    attendeesPool.value = attendeesPool.value.filter((a) => a.id !== member.id);
+
+    // persist teams to server (best-effort)
+    try {
+      await fetch(`${API}/api/teams`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teams: teams.value }),
+      });
+      // no toast for drag/paste operations (silent)
+    } catch (e) {
+      console.error("save teams after drop failed", e);
+      // keep silent on failures triggered by drag actions
+    }
+  } catch (e) {
+    console.error("drop err", e);
+  }
+  // clear insertion state
+  dragInsertion.value = { teamId: null, index: -1 };
+}
+
+function onDragOverTeam(e: DragEvent, teamId: string) {
+  e.preventDefault();
+  try {
+    const container = e.currentTarget as HTMLElement;
+    if (!container) return;
+    const tbody = container.querySelector("tbody");
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll("tr")).filter((r) => {
+      // ignore placeholder rows we insert for the visual indicator
+      try {
+        const el = r as HTMLElement;
+        if (el.getAttribute("data-placeholder") === "1") return false;
+      } catch (e) {}
+      return r.querySelectorAll("td").length > 0;
+    });
+    const y = e.clientY;
+    let idx = 0;
+    // Bias split point to 40% (less sensitive when cursor near center)
+    const biasFactor = 0.4;
+    for (let i = 0; i < rows.length; i++) {
+      const rect = rows[i].getBoundingClientRect();
+      const split = rect.top + rect.height * biasFactor;
+      if (y < split) {
+        idx = i;
+        break;
+      }
+      idx = i + 1;
+    }
+
+    // If the team changed, update immediately. Otherwise, require stability for ~70ms.
+    const candidateTeam = teamId;
+    const candidateIndex = idx;
+    if (
+      dragInsertion.value.teamId === candidateTeam &&
+      dragInsertion.value.index === candidateIndex
+    ) {
+      // already showing
+      return;
+    }
+
+    // clear any previous pending timer
+    try {
+      if (_hoverPending.timer) {
+        clearTimeout(_hoverPending.timer as any);
+        _hoverPending.timer = null;
+      }
+    } catch (err) {}
+
+    if (dragInsertion.value.teamId !== candidateTeam) {
+      // team changed — switch immediately
+      dragInsertion.value = { teamId: candidateTeam, index: candidateIndex };
+      _hoverPending.teamId = null;
+      _hoverPending.index = -1;
+      return;
+    }
+
+    // same team: set pending and wait for stability
+    _hoverPending.teamId = candidateTeam;
+    _hoverPending.index = candidateIndex;
+    _hoverPending.timer = window.setTimeout(() => {
+      // only apply if still matches pending
+      dragInsertion.value = { teamId: _hoverPending.teamId, index: _hoverPending.index };
+      _hoverPending.timer = null;
+    }, 70) as unknown as number;
+  } catch (err) {
+    // ignore
+  }
+}
+
+function onDragLeaveTeam(e: DragEvent, teamId: string) {
+  // Clear any visual insertion marker when leaving the team container
+  dragInsertion.value = { teamId: null, index: -1 };
+}
+
+async function onDropToLeaders(e: DragEvent) {
+  e.preventDefault();
+  try {
+    const raw = e.dataTransfer?.getData("text/plain");
+    if (!raw) return;
+    const payload = JSON.parse(raw);
+    const { id } = payload;
+    // only accept if member is a leader OR promote? We'll add leader to sidebar and remove from teams/pools
+    let member: any = null;
+    let originalTeamId: string | null = null;
+    let originalIndex = -1;
+    let removedFromAttendees = false;
+    // remove from teams if present
+    for (const t of teams.value) {
+      const mi = (t.members || []).findIndex((m) => m.id === id);
+      if (mi !== -1) {
+        member = t.members.splice(mi, 1)[0];
+        originalTeamId = t.id;
+        originalIndex = mi;
+        break;
+      }
+    }
+    if (!member) {
+      const ai = attendeesPool.value.findIndex((a) => a.id === id);
+      if (ai !== -1) member = attendeesPool.value.splice(ai, 1)[0];
+      removedFromAttendees = ai !== -1;
+    }
+    if (!member) return;
+
+    // Only allow dropping into Leaders panel if the dragged item was already a leader
+    // or the drag source was 'leader'. If a normal person is dragged, revert them to original place.
+    if (!member.is_leader && payload.source !== "leader") {
+      // revert change and flash the original row as a rejection
+      if (originalTeamId) {
+        const t = teams.value.find((x) => x.id === originalTeamId);
+        if (t) {
+          t.members.splice(Math.min(originalIndex, t.members.length), 0, member);
+          // flash this member's row to indicate rejection
+          flashReject(member.id);
+        } else {
+          // fallback to attendees pool
+          attendeesPool.value.push(member);
+        }
+      } else if (removedFromAttendees) {
+        attendeesPool.value.push(member);
+      } else {
+        // fallback
+        attendeesPool.value.push(member);
+      }
+      // clear insertion marker and stop
+      dragInsertion.value = { teamId: null, index: -1 };
+      return;
+    }
+
+    // mark as leader
+    member.is_leader = true;
+    if (!leadersPool.value.some((l) => l.id === member.id)) leadersPool.value.push(member);
+
+    // persist (silent)
+    try {
+      await fetch(`${API}/api/teams`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teams: teams.value }),
+      });
+    } catch (e) {
+      console.error("save after drop to leaders failed", e);
+    }
+    // clear any visual insertion marker
+    dragInsertion.value = { teamId: null, index: -1 };
+  } catch (e) {
+    console.error("drop to leaders err", e);
+  }
 }
 
 // Persistence: save teams and pools to localStorage so state survives refresh
@@ -740,7 +1114,7 @@ function teamStats(team: Team) {
   // normalize genders string
   const g = s.genders || {};
   const gendersStr = `M:${g.Male || 0} F:${g.Female || 0} O:${g.Other || 0}`;
-  return { count: s.count, avgAge: Math.round(s.avgAge * 10)/10, gendersStr };
+  return { count: s.count, avgAge: Math.round(s.avgAge * 10) / 10, gendersStr };
 }
 
 function toSafeFilename(s: string) {
@@ -826,7 +1200,9 @@ function exportTeams() {
               >
                 Total Teams
               </div>
-              <div class="mt-1 text-3xl font-normal text-gray-800">{{ totalTeams }}</div>
+              <div class="mt-1 text-3xl font-normal text-gray-800">
+                {{ totalTeams }}
+              </div>
             </div>
             <div
               class="flex flex-col p-4 rounded-lg border border-indigo-300 bg-white text-xs font-medium text-indigo-700 shadow-sm w-48"
@@ -836,7 +1212,9 @@ function exportTeams() {
               >
                 Unassigned Attendees
               </div>
-              <div class="mt-1 text-3xl font-normal text-gray-800">{{ unassignedCount }}</div>
+              <div class="mt-1 text-3xl font-normal text-gray-800">
+                {{ unassignedCount }}
+              </div>
             </div>
           </div>
 
@@ -871,7 +1249,8 @@ function exportTeams() {
               <!-- Secondary + Disabled -->
               <button
                 @click="saveTeams"
-                class="inline-flex items-center rounded-lg px-4 py-2.5 text-sm font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                class="inline-flex items-center rounded-lg px-4 py-2.5 text-sm font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+              >
                 Save Teams
               </button>
 
@@ -917,53 +1296,63 @@ function exportTeams() {
         <!-- Leaders panel -->
         <aside class="col-span-1">
           <div class="border rounded p-3 bg-white sticky top-6">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="font-semibold">Leaders</h3>
-              <span class="text-sm text-gray-500">{{
-                availableLeaders.length
-              }}</span>
-            </div>
-            <div class="space-y-2">
-              <template v-if="availableLeaders.length === 0">
-                <div class="text-sm text-gray-500">No available leaders</div>
-              </template>
-              <template v-else>
-                <div
-                  v-for="l in availableLeaders"
-                  :key="l.id"
-                  class="flex items-center justify-between"
-                >
-                  <div class="flex items-center gap-3">
-                    <div
-                      class="uppercase w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-sm font-semibold"
-                    >
-                      {{ (l.first_name || "").charAt(0)
-                      }}{{ (l.last_name || "").charAt(0) }}
+            <div @dragover.prevent @drop="onDropToLeaders">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold">Leaders</h3>
+                <span class="text-sm text-gray-500">{{
+                  availableLeaders.length
+                }}</span>
+              </div>
+              <div class="space-y-2">
+                <template v-if="availableLeaders.length === 0">
+                  <div class="text-sm text-gray-500">No available leaders</div>
+                </template>
+                <template v-else>
+                  <div
+                    v-for="l in availableLeaders"
+                    :key="l.id"
+                    class="flex items-center justify-between"
+                    draggable="true"
+                    @dragstart="(e) => onDragStart(e, l, 'leader')"
+                    @dragend="onDragEnd"
+                  >
+                    <div class="flex items-center gap-3">
+                      <div
+                        class="uppercase w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-sm font-semibold"
+                      >
+                        {{ (l.first_name || "").charAt(0)
+                        }}{{ (l.last_name || "").charAt(0) }}
+                      </div>
+                      <div>
+                        <div class="text-sm font-medium capitalize">
+                          {{ l.first_name.toLowerCase() }} {{ l.last_name.toLowerCase() }}
+                        </div>
+                        <div class="text-xs text-gray-500">
+                          {{ l.congregation }} • {{ l.age }} • {{ l.gender }}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div class="text-sm font-medium capitalize ">
-                        {{ l.first_name }} {{ l.last_name }}
-                      </div>
-                      <div class="text-xs text-gray-500">
-                        {{ l.congregation }} • {{ l.age }} • {{ l.gender }}
-                      </div>
+                    <div class="flex items-center gap-2">
+                      <select
+                        v-if="teams.length"
+                        class="text-xs border px-2 py-1 rounded"
+                        @change="assignLeaderToTeam(l.id, $event.target.value)"
+                      >
+                        <option value="">Assign…</option>
+                        <option v-for="t in teams" :key="t.id" :value="t.id">
+                          {{ t.name }}
+                        </option>
+                      </select>
                     </div>
                   </div>
-                  <div class="flex items-center gap-2">
-                    <select
-                      v-if="teams.length"
-                      class="text-xs border px-2 py-1 rounded"
-                      @change="assignLeaderToTeam(l.id, $event.target.value)"
-                    >
-                      <option value="">Assign…</option>
-                      <option v-for="t in teams" :key="t.id" :value="t.id">
-                        {{ t.name }}
-                      </option>
-                    </select>
-                  </div>
-                </div>
-              </template>
+                </template>
+              </div>
             </div>
+          </div>
+
+          <div class="mt-6 text-sm text-center text-gray-600">
+            Note: Leaders are not auto-assigned. Regenerate clears existing
+            teams.
           </div>
         </aside>
 
@@ -972,6 +1361,9 @@ function exportTeams() {
             v-for="team in teams"
             :key="team.id"
             class="border rounded p-3 bg-white mb-4"
+            @dragover="(e) => onDragOverTeam(e, team.id)"
+            @dragleave="(e) => onDragLeaveTeam(e, team.id)"
+            @drop="(e) => onDropToTeam(e, team.id)"
           >
             <div class="flex items-center gap-2 mb-2">
               <input
@@ -999,41 +1391,85 @@ function exportTeams() {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="m in team.members" :key="m.id" class="border-t">
-                  <td class="py-3">
-                    <div class="flex items-center gap-3">
-                      <div
-                        class="uppercase w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0"
+                <!-- placeholder before first member -->
+                <transition name="insertion">
+                  <tr
+                    v-if="
+                      dragInsertion.teamId === team.id &&
+                      dragInsertion.index === 0
+                    "
+                    data-placeholder="1"
+                  >
+                    <td colspan="6" class="py-1">
+                      <div class="h-0.5 bg-indigo-500 rounded"></div>
+                    </td>
+                  </tr>
+                </transition>
+                <template v-for="(m, mi) in team.members" :key="m.id">
+                  <tr
+                    class="border-t"
+                    :class="{ 'rejected-row': rejectFlash[m.id] }"
+                    draggable="true"
+                    @dragstart="(e) => onDragStart(e, m, 'team', team.id)"
+                    @dragend="onDragEnd"
+                  >
+                    <td class="py-3">
+                      <div class="flex items-center gap-3">
+                        <div
+                          class="uppercase w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0"
+                        >
+                          {{ (m.first_name || "").charAt(0)
+                          }}{{ (m.last_name || "").charAt(0) }}
+                        </div>
+                        <div
+                          class="font-medium capitalize flex items-center gap-2"
+                        >
+                          <span>{{ m.first_name.toLowerCase() }} {{ m.last_name.toLowerCase() }}</span>
+                          <span
+                            v-if="m.is_leader"
+                            class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded"
+                            >Leader</span
+                          >
+                        </div>
+                      </div>
+                    </td>
+                    <td class="py-3 capitalize">{{ m.congregation.toLowerCase() }}</td>
+                    <td class="py-3 capitalize">{{ m.nickname.toLowerCase() }}</td>
+                    <td class="py-3">{{ m.gender }}</td>
+                    <td class="py-3">{{ m.age }}</td>
+                    <td class="py-3">
+                      <button
+                        @click="confirmRemoveMember(team.id, m.id)"
+                        class="text-xs text-red-600"
                       >
-                        {{ (m.first_name || "").charAt(0)
-                        }}{{ (m.last_name || "").charAt(0) }}
-                      </div>
-                      <div class="font-medium capitalize flex items-center gap-2">
-                        <span>{{ m.first_name }} {{ m.last_name }}</span>
-                        <span v-if="m.is_leader" class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">Leader</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td class="py-3 capitalize">{{ m.congregation }}</td>
-                  <td class="py-3 capitalize">{{ m.nickname }}</td>
-                  <td class="py-3">{{ m.gender }}</td>
-                  <td class="py-3">{{ m.age }}</td>
-                  <td class="py-3">
-                    <button
-                      @click="confirmRemoveMember(team.id, m.id)"
-                      class="text-xs text-red-600"
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                  <!-- placeholder after a member row -->
+                  <transition name="insertion">
+                    <tr
+                      v-if="
+                        dragInsertion.teamId === team.id &&
+                        dragInsertion.index === mi + 1
+                      "
+                      data-placeholder="1"
                     >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
+                      <td colspan="6" class="py-1">
+                        <div class="h-0.5 bg-indigo-500 rounded"></div>
+                      </td>
+                    </tr>
+                  </transition>
+                </template>
               </tbody>
               <tfoot class="text-xs text-gray-600">
                 <tr>
                   <td colspan="6" class="py-2">
                     <div class="flex items-center justify-between">
                       <div>Count: {{ team.members.length }}</div>
-                      <div class="text-sm text-gray-500">Genders: {{ teamStats(team).gendersStr }}</div>
+                      <div class="text-sm text-gray-500">
+                        Genders: {{ teamStats(team).gendersStr }}
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -1077,9 +1513,6 @@ function exportTeams() {
           </div>
         </div>
       </div>
-      <div class="mt-6 text-sm text-gray-600">
-        Note: Leaders are not auto-assigned. Regenerate clears existing teams.
-      </div>
     </section>
   </div>
   <!-- Global LoadingOverlay and ToastShelf are mounted in App.vue -->
@@ -1089,5 +1522,27 @@ function exportTeams() {
 /* minimal styling */
 body {
   font-family: Inter, system-ui, Arial;
+}
+
+/* insertion bar transition */
+.insertion-enter-from,
+.insertion-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.insertion-enter-to,
+.insertion-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+}
+.insertion-enter-active,
+.insertion-leave-active {
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+/* rejected row flash */
+.rejected-row {
+  background-color: rgba(254, 226, 226); /* light red */
+  transition: background-color 300ms ease;
 }
 </style>

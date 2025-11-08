@@ -506,8 +506,9 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
           </div>
 
           <!-- Section: Notes -->
-          <div class="p-6 sm:p-8">
-            <h2 class="mb-4 flex items-center gap-2">
+          <div class="p-6 sm:p-8" >
+            <h2 class="mb-4 flex items-center gap-2" 
+                  v-if="isCamp">
               <span
                 class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold"
                 >3</span
@@ -516,7 +517,8 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
                 >Additional Info</span
               >
             </h2>
-            <label class="block">
+            <label class="block" 
+                  v-if="isCamp">
               <span :class="labelCls"
                 >Allergies / Medical Conditions / Notes</span
               >
@@ -528,10 +530,10 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
               ></textarea>
             </label>
 
-            <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center justify-end">
               <button
                 :disabled="submitting"
-                class="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                class="inline-flex w-40 items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <svg
                   v-if="submitting"

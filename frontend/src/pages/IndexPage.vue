@@ -24,6 +24,7 @@ const fetchWithCreds = (url, opts = {}) =>
 
 /* ---------- State ---------- */
 const congregation = ref("All");
+const exclude_congregation = ref("All");
 const age = ref("All");
 const gender = ref("All");
 const is_leader = ref("All");
@@ -157,6 +158,7 @@ const is_guardians = computed(() => ["All", "Yes", "No"]);
 const isFilterActive = computed(() => {
   return (
     congregation.value !== "All" ||
+    exclude_congregation.value !== "All" ||
     age.value !== "All" ||
     gender.value !== "All" ||
     is_leader.value !== "All" ||
@@ -168,6 +170,7 @@ const isFilterActive = computed(() => {
 
 function resetFilters() {
   congregation.value = "All";
+  exclude_congregation.value = "All";
   age.value = "All";
   gender.value = "All";
   is_leader.value = "All";
@@ -199,6 +202,8 @@ async function fetchCampers() {
     const params = new URLSearchParams();
     if (congregation.value !== "All")
       params.set("congregation", congregation.value);
+    if (exclude_congregation.value !== "All")
+      params.set("exclude_congregation", exclude_congregation.value);
     if (gender.value !== "All") params.set("gender", gender.value);
     if (age.value !== "All") params.set("age", age.value);
     if (is_leader.value !== "All")
@@ -241,6 +246,7 @@ async function printList() {
     await withLoading(async () => {
       const body = {
         congregation: congregation.value,
+          exclude_congregation: exclude_congregation.value,
         age: age.value,
         gender: gender.value,
         is_leader:
@@ -454,7 +460,7 @@ onUnmounted(() => {
 });
 
 watch(
-  [congregation, age, gender, is_leader, is_baptized, is_guardian],
+  [congregation, exclude_congregation, age, gender, is_leader, is_baptized, is_guardian],
   async () => {
     await fetchCampers();
     currentPage.value = 1;
@@ -464,8 +470,15 @@ watch(
 /* ---------- Search + sorting + paging ---------- */
 const filteredAndSortedCampers = computed(() => {
   const term = search.value.toLowerCase().trim();
-  if (!term) return campers.value;
-  return campers.value.filter((c) => {
+  // Start from full list, apply exclude_congregation first so UI reflects exclusion immediately
+  let list = campers.value;
+  if (exclude_congregation.value && exclude_congregation.value !== "All") {
+    const ex = exclude_congregation.value.toLowerCase();
+    list = list.filter((c) => (c.congregation || "").toLowerCase() !== ex);
+  }
+
+  if (!term) return list;
+  return list.filter((c) => {
     const full = `${c.first_name} ${c.last_name}`.toLowerCase();
     const nick = (c.nickname || "").toLowerCase();
     const cong = (c.congregation || "").toLowerCase();
@@ -672,6 +685,14 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
             <span :class="labelCls">Congregation</span>
             <select v-model="congregation" :class="selectCls">
               <option v-for="c in congregations" :key="c" :value="c">
+                {{ c }}
+              </option>
+            </select>
+          </label>
+          <label class="block">
+            <span :class="labelCls">Exclude Congregation</span>
+            <select v-model="exclude_congregation" :class="selectCls">
+              <option v-for="c in congregations" :key="'exclude-'+c" :value="c">
                 {{ c }}
               </option>
             </select>
@@ -1219,7 +1240,7 @@ watch(() => branding.logo && branding.logo.value, setHeaderLogoFromBranding);
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
-            <tr v-for="c in campers" :key="c.id">
+            <tr v-for="c in sortedCampers" :key="c.id">
               <td class="px-3 py-2">{{ c.first_name }} {{ c.last_name }}</td>
               <td class="px-3 py-2">{{ c.congregation || "-" }}</td>
               <td class="px-3 py-2">{{ c.age || "-" }}</td>
